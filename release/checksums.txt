@@ -1,0 +1,6 @@
+a67ba510e5aaa492e07b46e87b79093055bd702f4e99f6d9ee5947a2c687c6df  vorm-v1.0.0-darwin-amd64.tar.gz
+03f991c353bfbdbc7b0fb615e2c7a947e8a2145154e175d69bb74037e73c0636  vorm-v1.0.0-darwin-arm64.tar.gz
+25611947d9d249e6ad6f42e0ab82aa4eb3e87127909fb26a842153c18fdee3d6  vorm-v1.0.0-linux-amd64.tar.gz
+51d8372400e9fd845714de644a5f377a6c21c02bf8fdcfe0a4cad8e14d1ae472  vorm-v1.0.0-linux-arm64.tar.gz
+ea16725aba731e439d285b35aa20fb88da3b1b68b2a5b38ac925098128670f75  vorm-v1.0.0-windows-amd64.tar.gz
+2c76b656e2247c4fc46bad5a031d948ddb47160bbbd187cc3993dbee42c4f4cb  vorm-v1.0.0-windows-amd64.zip

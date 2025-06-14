@@ -1,5 +1,5 @@
-# Binaries for programs and plugins
-*.exe
+# Binaries for programs and plugins (exclude local builds but keep release binaries)
+*.exe.local
 *.exe~
 *.dll
 *.so
@@ -17,13 +17,13 @@
 # Go workspace file
 go.work
 
-# Build artifacts
-/bin/
+# Build artifacts (exclude local builds but keep release artifacts)
 /build/
 /dist/
-/release/
 /vorm
-vorm-*
+# Only exclude local development binaries, keep release binaries
+/bin/vorm-local*
+/bin/vorm-dev*
 
 # IDE and editor files
 .vscode/
@@ -83,9 +83,9 @@ lib-cov
 # Coverage directory used by tools like istanbul
 coverage/
 
-# Archive files
-*.tar.gz
-*.zip
+# Archive files (exclude local archives but keep release archives)
+*.tar.gz.local
+*.zip.local
 *.rar
 
 # Local development files
