@@ -1,0 +1,28 @@
+# Database configuration
+database:
+  connection: postgres
+  host: localhost
+  port: 5432
+  database: myapp_db
+  username: postgres
+  password: secret
+  sslmode: disable
+
+# Migration configuration
+migration:
+  table: schema_migrations
+  directory: migrations
+  timezone: UTC
+
+# Logging configuration
+logging:
+  enabled: true
+  directory: logs
+  filename: vorm.log
+  level: info
+  max_size: 100 # MB
+  max_backups: 3
+  max_age: 30 # days
+
+# Environment settings
+environment: development # development, staging, production
