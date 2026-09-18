@@ -11,7 +11,7 @@ import (
 
 func TestBelongsToAndPivot(t *testing.T) {
 	dir := t.TempDir()
-	f := &schema.Facade{MigrationPath: dir, AutoMigrate: false, EnsureVM: false, Dialect: "postgres"}
+	f := &schema.Facade{MigrationPath: dir, AutoMigrate: false, Dialect: "postgres"}
 
 	if err := f.Create("users", func(t *schema.Blueprint) {
 		t.ID()

@@ -27,6 +27,11 @@ type relPlan struct {
 	PivotOwnerKey   string
 	PivotRelatedKey string
 	RelatedKey      string
+	PivotTimestamps bool
+
+	MorphType       string
+	MorphTypeColumn string
+	MorphIDColumn   string
 }
 
 // tableFields resolves the Go field name for every column, applying the same
@@ -117,6 +122,47 @@ func planRelations(tables []introspect.Table) map[string][]relPlan {
 		}
 	}
 
+	for _, t := range tables {
+		for _, m := range morphColumns(t) {
+			add(relPlan{
+				Owner:           t.Name,
+				Name:            m.prefix,
+				Field:           GoName(m.prefix),
+				Kind:            query.RelationMorphTo,
+				RelatedTable:    t.Name,
+				LocalKey:        m.idCol,
+				ForeignKey:      "id",
+				MorphTypeColumn: m.typeCol,
+				MorphIDColumn:   m.idCol,
+			})
+			childName := Plural(Singular(t.Name))
+			for _, other := range tables {
+				if strings.EqualFold(other.Name, t.Name) || pivots[strings.ToLower(other.Name)] {
+					continue
+				}
+				if relationNameTaken(out[other.Name], childName) {
+					continue
+				}
+				pk := other.SinglePrimaryKey()
+				if pk == "" {
+					pk = "id"
+				}
+				add(relPlan{
+					Owner:           other.Name,
+					Name:            childName,
+					Field:           GoName(childName),
+					Kind:            query.RelationMorphMany,
+					RelatedTable:    t.Name,
+					LocalKey:        pk,
+					ForeignKey:      m.idCol,
+					MorphType:       other.Name,
+					MorphTypeColumn: m.typeCol,
+					MorphIDColumn:   m.idCol,
+				})
+			}
+		}
+	}
+
 	for owner := range out {
 		out[owner] = dedupeRelations(out[owner])
 	}
@@ -158,17 +204,6 @@ func pivotSides(t introspect.Table, known map[string]introspect.Table) (introspe
 	if len(fks) != 2 || strings.EqualFold(fks[0].RefTable, fks[1].RefTable) {
 		return introspect.ForeignKey{}, introspect.ForeignKey{}, false
 	}
-
-	structural := map[string]bool{
-		strings.ToLower(fks[0].Columns[0]): true,
-		strings.ToLower(fks[1].Columns[0]): true,
-		"id":                               true, "created_at": true, "updated_at": true, "deleted_at": true,
-	}
-	for _, c := range t.Columns {
-		if !structural[strings.ToLower(c.Name)] {
-			return introspect.ForeignKey{}, introspect.ForeignKey{}, false
-		}
-	}
 	return fks[0], fks[1], true
 }
 
@@ -185,7 +220,65 @@ func belongsToManyPlan(pivot introspect.Table, own, other introspect.ForeignKey)
 		Pivot:           pivot.Name,
 		PivotOwnerKey:   own.Columns[0],
 		PivotRelatedKey: other.Columns[0],
+		PivotTimestamps: tableHasColumn(pivot, "created_at"),
 	}
+}
+
+func tableHasColumn(t introspect.Table, name string) bool {
+	for _, c := range t.Columns {
+		if strings.EqualFold(c.Name, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func relationNameTaken(plans []relPlan, name string) bool {
+	for _, p := range plans {
+		if p.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+type morphPair struct {
+	prefix, typeCol, idCol string
+}
+
+func morphColumns(t introspect.Table) []morphPair {
+	have := map[string]string{}
+	for _, c := range t.Columns {
+		have[strings.ToLower(c.Name)] = c.Name
+	}
+	var out []morphPair
+	for _, c := range t.Columns {
+		lower := strings.ToLower(c.Name)
+		if !strings.HasSuffix(lower, "_type") {
+			continue
+		}
+		prefix := strings.TrimSuffix(lower, "_type")
+		if prefix == "" {
+			continue
+		}
+		idCol, ok := have[prefix+"_id"]
+		if !ok || columnIsFK(t, idCol) {
+			continue
+		}
+		out = append(out, morphPair{prefix: prefix, typeCol: c.Name, idCol: idCol})
+	}
+	return out
+}
+
+func columnIsFK(t introspect.Table, col string) bool {
+	for _, fk := range t.ForeignKeys {
+		for _, c := range fk.Columns {
+			if strings.EqualFold(c, col) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func dedupeRelations(plans []relPlan) []relPlan {

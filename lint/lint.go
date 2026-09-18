@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/vorzela/vorm/schema"
 )
 
 // Severity of a finding.
@@ -38,7 +40,7 @@ func (r *Result) HasErrors() bool {
 	return false
 }
 
-// Dir lints all *.sql migrations under path.
+// Dir lints numbered *.sql and *.go migrations under path.
 func Dir(path string) (*Result, error) {
 	res := &Result{}
 	entries, err := os.ReadDir(path)
@@ -47,7 +49,7 @@ func Dir(path string) (*Result, error) {
 			res.Findings = append(res.Findings, Finding{
 				Severity:   Warning,
 				Message:    "migrations directory missing: " + path,
-				Suggestion: "run: vorm make table <name>",
+				Suggestion: "run: vorm make migration <name>",
 			})
 			return res, nil
 		}
@@ -57,13 +59,20 @@ func Dir(path string) (*Result, error) {
 		res.Findings = append(res.Findings, Finding{
 			Severity:   Hint,
 			Message:    "no migration files yet",
-			Suggestion: "vorm make table users && vorm make table posts --belongs-to=user_id:users --soft",
+			Suggestion: "vorm make migration users",
 		})
 		return res, nil
 	}
 	migrations := 0
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") || !isMigrationFile(e.Name()) {
+		if e.IsDir() || !isMigrationFile(e.Name()) {
+			continue
+		}
+		ext := filepath.Ext(e.Name())
+		if ext != ".sql" && ext != ".go" {
+			continue
+		}
+		if strings.HasSuffix(e.Name(), "_test.go") {
 			continue
 		}
 		migrations++
@@ -71,6 +80,10 @@ func Dir(path string) (*Result, error) {
 		body, err := os.ReadFile(full)
 		if err != nil {
 			return nil, err
+		}
+		if ext == ".go" {
+			res.Findings = append(res.Findings, GoFile(full, string(body))...)
+			continue
 		}
 		res.Findings = append(res.Findings, File(full, string(body))...)
 	}
@@ -99,7 +112,7 @@ func File(path, body string) []Finding {
 	name := filepath.Base(path)
 
 	if !strings.Contains(body, "⬆ Up") && !strings.Contains(lower, "-- up") {
-		out = append(out, Finding{path, Error, "missing Up section marker", "use vorzela/vm markers: -- ⬆ Up … and -- ⬇ Down …"})
+		out = append(out, Finding{path, Error, "missing Up section marker", "use vorm markers: -- ⬆ Up … and -- ⬇ Down …"})
 	}
 	if !strings.Contains(body, "⬇ Down") && !strings.Contains(lower, "-- down") {
 		out = append(out, Finding{path, Error, "missing Down section marker", "add a reversible -- ⬇ Down section (DROP TABLE / DROP TYPE / DROP INDEX)"})
@@ -120,7 +133,7 @@ func File(path, body string) []Finding {
 		out = append(out, Finding{path, Hint, "indexes created; ensure Down drops them (or rely on DROP TABLE CASCADE)", "explicit DROP INDEX IF EXISTS is clearer on rollback"})
 	}
 	if strings.Contains(name, "create_") && strings.Contains(name, "_table") && !strings.Contains(lower, "create table") {
-		out = append(out, Finding{path, Error, "filename looks like create_*_table but no CREATE TABLE", "re-run: vorm make table <name>"})
+		out = append(out, Finding{path, Error, "filename looks like create_*_table but no CREATE TABLE", "re-run: vorm make migration <name>"})
 	}
 	if strings.Contains(lower, "references ") && !strings.Contains(lower, "on delete") {
 		out = append(out, Finding{path, Hint, "FK without ON DELETE clause", "consider ON DELETE CASCADE or RESTRICT explicitly"})
@@ -138,6 +151,27 @@ func File(path, body string) []Finding {
 		out = append(out, Finding{path, Warning, "Down section is empty", "add DROP statements so vorm rollback works"})
 	}
 
+	return out
+}
+
+// GoFile lints a Blueprint migration by compiling Up/Down to SQL.
+func GoFile(path, body string) []Finding {
+	var out []Finding
+	if !strings.Contains(body, "func Up") {
+		out = append(out, Finding{path, Error, "missing func Up", "add func Up(s *schema.Facade) { s.Create(...) }"})
+		return out
+	}
+	if !strings.Contains(body, "func Down") {
+		out = append(out, Finding{path, Warning, "missing func Down", "add func Down(s *schema.Facade) { s.DropIfExists(...) }"})
+	}
+	if _, err := schema.CompileSource(path, body, "postgres"); err != nil {
+		out = append(out, Finding{
+			File:       path,
+			Severity:   Error,
+			Message:    err.Error(),
+			Suggestion: "use Blueprint methods vorm compiles (ID, String, ForeignId, BelongsToMany, Morphs, …)",
+		})
+	}
 	return out
 }
 

@@ -28,8 +28,7 @@ go install github.com/vorzela/vorm/cmd/vorm@latest
 vorm version
 ```
 
-The CLI runs migrations in-process. The `vm` binary is not required unless you
-explicitly set `RUNNER=vm`.
+The CLI runs migrations in-process.
 
 ## Start a project
 
@@ -45,7 +44,7 @@ vorm init
 `vorm init` writes `.vorm` with the dialect detected from `DATABASE_URL`:
 
 ```
-wrote .vorm (PACKAGE=gen, DIALECT=postgres, RUNNER=native)
+wrote .vorm (PACKAGE=gen, DIALECT=postgres)
 next: export DATABASE_URL=… && vorm migrate && vorm generate
 ```
 
@@ -61,8 +60,8 @@ always wins, which is what makes the same config work in CI and production.
 
 ## Write a migration
 
-There are two ways in, and they end up in the same place: a `.sql` file under
-`migrations/` that the runner applies.
+The usual path is a numbered Blueprint file under `migrations/`. Legacy numbered
+`.sql` files still apply.
 
 **Write the SQL yourself.** Create
 `migrations/<unix_timestamp>_create_users_table.sql` with both directions:
@@ -92,13 +91,12 @@ DROP TABLE IF EXISTS users;
 DROP TYPE IF EXISTS user_status;
 ```
 
-**Or describe the table in Go.** `vorm make migration users` scaffolds a
-Laravel-style Blueprint (plus a model placeholder and a query stub):
+**Or describe the table in Go.** `vorm make migration users` writes a numbered
+Blueprint file under `migrations/`:
 
 ```go
-// schema/migrations/create_users.go
-func CreateUsersTable(s *schema.Facade) error {
-	return s.Create("users", func(t *schema.Blueprint) {
+func Up(s *schema.Facade) {
+	s.Create("users", func(t *schema.Blueprint) {
 		t.ID()
 		t.String("email").Unique()
 		t.Enum("status", "active", "invited", "banned")
@@ -107,20 +105,22 @@ func CreateUsersTable(s *schema.Facade) error {
 		t.SoftDeletes()
 	})
 }
+
+func Down(s *schema.Facade) {
+	s.DropIfExists("users")
+}
 ```
 
-Calling `CreateUsersTable(nil)` writes the `.sql` file and, with
-`AutoMigrate` on, applies it — in-process, no external binary. Use whichever
-you prefer; the SQL on disk is the source of truth either way.
-
-Apply it:
+`vorm migrate` compiles `Up`/`Down` to SQL and applies it. Then
+`vorm generate models` introspects the live database (or `--from-blueprint` to
+parse the same Go files).
 
 ```bash
 vorm migrate
 ```
 
 ```
-  migrate  1700000000_create_users_table.sql  ok (36ms)
+  migrate  1700000000_create_users_table.go  ok (36ms)
 migrate: 1 migration(s) in batch 1
 ```
 

@@ -1,4 +1,4 @@
-// Package config loads `.vorm` project settings (KEY=value, same spirit as `.vm`).
+// Package config loads `.vorm` project settings (KEY=value).
 package config
 
 import (
@@ -18,24 +18,16 @@ const (
 	DefaultOutDir        = "./vorm/gen"
 	DefaultQueryDir      = "./queries"
 	DefaultModelDir      = "./models"
-	DefaultSchemaDir     = "./schema/migrations"
+	DefaultSchemaDir     = "./migrations"
 	DefaultModelPkg      = "models"
 	DefaultDriver        = "pgx"
 	DefaultDialect       = "postgres"
 	DefaultMigrationPath = "./migrations"
-	DefaultRunner        = RunnerNative
 	DefaultSchemaName    = "public"
 )
 
-// Migration runners. Native needs no external binary; VM shells out to the
-// `vm` CLI for projects that already standardise on it.
-const (
-	RunnerNative = "native"
-	RunnerVM     = "vm"
-)
-
 // Model sources. DB introspects the live database (full fidelity: nullability,
-// enums, indexes, foreign keys); Blueprint parses schema/migrations Go files.
+// enums, indexes, foreign keys); Blueprint parses numbered migrations/*.go files.
 const (
 	SourceDB        = "db"
 	SourceBlueprint = "blueprint"
@@ -59,16 +51,13 @@ type Config struct {
 	Driver  string // pgx | pq
 	Dialect string // postgres | mysql | mariadb
 
-	// DatabaseURL is the connection string used by the native migration runner
+	// DatabaseURL is the connection string used by the migration runner
 	// and by database introspection. Leave it out of .vorm and set DATABASE_URL
 	// in the environment for anything that is not a local dev database.
 	DatabaseURL string
 
-	// MigrationPath holds the .sql migrations (shared format with the vm CLI).
+	// MigrationPath holds numbered Blueprint *.go files (and legacy *.sql).
 	MigrationPath string
-
-	// Runner selects native (no external binary) or vm.
-	Runner string
 
 	// ModelSource selects db introspection or Blueprint parsing.
 	ModelSource string
@@ -98,7 +87,6 @@ func Default() *Config {
 		Driver:        DefaultDriver,
 		Dialect:       DefaultDialect,
 		MigrationPath: DefaultMigrationPath,
-		Runner:        DefaultRunner,
 		SchemaName:    DefaultSchemaName,
 		ModelSource:   SourceDB,
 		EmitRelations: true,
@@ -113,11 +101,6 @@ func (c *Config) ResolveDatabaseURL() string {
 		return v
 	}
 	return strings.TrimSpace(c.DatabaseURL)
-}
-
-// UseNativeRunner reports whether migrations run in-process (no vm binary).
-func (c *Config) UseNativeRunner() bool {
-	return !strings.EqualFold(c.Runner, RunnerVM)
 }
 
 // IntrospectModels reports whether models are generated from the live database.
@@ -215,7 +198,8 @@ func (c *Config) set(key, val string) error {
 	case "MIGRATION_PATH", "MIGRATIONS_DIR":
 		c.MigrationPath = val
 	case "RUNNER":
-		c.Runner = strings.ToLower(val)
+		// Ignored: migrations always run in-process. Accepted so older .vorm
+		// files that still list the key continue to load.
 	case "MODEL_SOURCE", "SOURCE":
 		c.ModelSource = strings.ToLower(val)
 		c.modelSourceSet = true
@@ -284,9 +268,6 @@ func (c *Config) applyDerived() {
 	if c.MigrationPath == "" {
 		c.MigrationPath = DefaultMigrationPath
 	}
-	if c.Runner == "" {
-		c.Runner = DefaultRunner
-	}
 	if c.ModelSource == "" {
 		c.ModelSource = SourceDB
 	}
@@ -313,11 +294,6 @@ func (c *Config) Validate() error {
 	case "postgres", "postgresql", "mysql", "mariadb":
 	default:
 		return fmt.Errorf("DIALECT: want postgres|mysql|mariadb, got %q", c.Dialect)
-	}
-	switch c.Runner {
-	case RunnerNative, RunnerVM:
-	default:
-		return fmt.Errorf("RUNNER: want native or vm, got %q", c.Runner)
 	}
 	switch c.ModelSource {
 	case SourceDB, SourceBlueprint:
@@ -379,8 +355,7 @@ func Format(c *Config) string {
 	b.WriteString("# SQL dialect: postgres | mysql | mariadb\n")
 	fmt.Fprintf(&b, "DIALECT=%s\n\n", c.Dialect)
 
-	b.WriteString("# Migration runner: native (in-process, no vm binary) | vm\n")
-	fmt.Fprintf(&b, "RUNNER=%s\n", c.Runner)
+	b.WriteString("# SQL migrations directory\n")
 	fmt.Fprintf(&b, "MIGRATION_PATH=%s\n\n", c.MigrationPath)
 
 	b.WriteString("# Connection string. Prefer the DATABASE_URL environment variable —\n")
@@ -456,8 +431,6 @@ func (c *Config) Get(key string) (string, error) {
 		return c.DatabaseURL, nil
 	case "MIGRATION_PATH", "MIGRATIONS_DIR":
 		return c.MigrationPath, nil
-	case "RUNNER":
-		return c.Runner, nil
 	case "MODEL_SOURCE", "SOURCE":
 		return c.ModelSource, nil
 	case "SCHEMA_NAME":
@@ -485,7 +458,7 @@ func Keys() []string {
 	return []string{
 		"PACKAGE", "OUT_DIR", "DRIVER", "DIALECT",
 		"QUERY_DIR", "MODEL_DIR", "SCHEMA_DIR", "MODEL_PACKAGE", "MODEL_IMPORT",
-		"DATABASE_URL", "MIGRATION_PATH", "RUNNER", "MODEL_SOURCE", "SCHEMA_NAME",
+		"DATABASE_URL", "MIGRATION_PATH", "MODEL_SOURCE", "SCHEMA_NAME",
 		"EMIT_RELATIONS", "EMIT_FUNCTIONS", "INCLUDE_VIEWS",
 	}
 }

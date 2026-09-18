@@ -13,7 +13,6 @@
   config/      ← .vorm project settings
   lint/        ← migration linter
   scaffold/    ← vorm make
-  vmtool/      ← optional shell-out to the vm binary
 typescript/    ← planned
 python/        ← planned
 ```
@@ -28,7 +27,7 @@ no single binary spanning all of them.
 - **Runtime** is parameterized SQL through `query.DB` and a real driver
   (pgx v5, lib/pq, MySQL) — no ORM-invented query language, no sqlc
 - **Codegen-first**: models come from the live database, queries from stubs
-- **Self-contained**: migrations run in-process; the `vm` binary is optional
+- **Self-contained**: migrations run in-process; no external binary
 - **Security**: bind every value, validate and quote identifiers, never
   `SELECT *`
 
@@ -63,31 +62,21 @@ Generation never emits a function that fails at runtime.
   generate → models/: structs, enum types, relation loaders, function wrappers
 ```
 
-The blueprint path (`schema/migrations/*.go`) is a fallback for when no database
+The blueprint path (`migrations/*.go`) is a fallback for when no database
 is reachable; introspection is the source of truth because it is the only one
 that knows nullability, real enum values and actual indexes.
 
 ## Migration pipeline
 
 ```
-  vorm make migration …   OR   schema.Facade.Create(...)
+  vorm make migration …   numbered migrations/{ts}_create_posts_table.go
            │
            ▼
-  migrations/*.sql  (+ declarative extensions.sql / enums.sql / functions.sql)
+  compile Blueprint AST → SQL  (Up/Down are never executed)
            │
            ▼
   migrate.Runner: lint → lock → transaction → checksum → tracking table
 ```
 
-## Relationship to Vorzela Migrate (`vm`)
-
-| Piece | Responsibility |
-|-------|----------------|
-| `vm` | Migrations, schema drift detection, online/zero-downtime DDL |
-| `vorm` | Migrations, schema DSL, introspection, codegen, runtime data layer |
-
-The two overlap on migrations by design. vorm's runner uses the same file
-format, `migrations` tracking table, checksums, batches and locks, so a
-directory works with either tool. vorm does not import `vm`'s packages and does
-not require its binary; `RUNNER=vm` shells out to it for teams that want drift
-detection or online DDL, which vorm does not implement.
+Existing numbered `*.sql` files still apply. Declarative `extensions.sql` /
+`enums.sql` / `functions.sql` stay beside them.

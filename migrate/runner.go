@@ -1,9 +1,4 @@
-// Package migrate applies Vorzela Migrate SQL files natively, so a Go program no
-// longer needs the vm binary on the host to migrate its database.
-//
-// The file layout, the migrations tracking table, batch numbering and checksums
-// match vm exactly, which means a project can be migrated with either tool
-// interchangeably.
+// Package migrate applies SQL migration files in-process.
 //
 //	conn, err := query.OpenPostgres(ctx, os.Getenv("DATABASE_URL"))
 //	if err != nil {
@@ -15,9 +10,11 @@
 //	opts.Dialect = migrate.DetectDialect(os.Getenv("DATABASE_URL"))
 //	report, err := migrate.New(conn, opts).Up(ctx)
 //
-// Migration files are named {unix_timestamp}_{snake_name}.sql and hold an Up and
-// a Down section, delimited by the markers vm writes (⬆/⬇) or by the goose,
-// golang-migrate or plain "-- Up" / "-- Down" equivalents.
+// Migration files are named {unix_timestamp}_{snake_name}.go (Blueprint Up/Down)
+// or the same with a .sql suffix (legacy markers). SQL files are delimited by
+// ⬆/⬇ markers or by the goose, golang-migrate or plain "-- Up" / "-- Down"
+// equivalents. Go files are compiled from the Blueprint AST — Up/Down are never
+// executed.
 package migrate
 
 import (
@@ -105,8 +102,8 @@ type Options struct {
 	Logger Logger
 }
 
-// DefaultOptions returns options for a PostgreSQL project laid out the way vm
-// scaffolds it, with checksum verification on.
+// DefaultOptions returns options for a PostgreSQL project with checksum
+// verification on.
 func DefaultOptions() Options {
 	return Options{
 		Dir:            DefaultDir,
@@ -276,7 +273,7 @@ func (r *Runner) Fresh(ctx context.Context) (*Report, error) {
 	return report, err
 }
 
-// Refresh is an alias for Fresh, mirroring vm's command set.
+// Refresh is an alias for Fresh.
 func (r *Runner) Refresh(ctx context.Context) (*Report, error) {
 	return r.Fresh(ctx)
 }
@@ -402,7 +399,11 @@ func (r *Runner) applyOne(ctx context.Context, migration Migration, batch int) S
 		result.Err = fmt.Errorf("vorm/migrate: read %s: %w", migration.Path, err)
 		return result
 	}
-	statements := SplitStatements(ExtractUp(string(content)))
+	statements, err := statementsFor(migration.Path, content, false, r.opts.Dialect)
+	if err != nil {
+		result.Err = err
+		return result
+	}
 	if len(statements) == 0 {
 		result.Skipped = true
 		result.Reason = "no Up section"
@@ -513,7 +514,11 @@ func (r *Runner) revertOne(ctx context.Context, row AppliedRow) StepResult {
 		return result
 	}
 
-	statements := SplitStatements(ExtractDown(string(content)))
+	statements, err := statementsFor(path, content, true, r.opts.Dialect)
+	if err != nil {
+		result.Err = err
+		return result
+	}
 	if len(statements) == 0 {
 		result.Skipped = true
 		result.Reason = "no Down section"
@@ -525,8 +530,8 @@ func (r *Runner) revertOne(ctx context.Context, row AppliedRow) StepResult {
 		return result
 	}
 
-	// vm runs Down sections without a wrapping transaction; keeping that means a
-	// rollback of a non-transactional migration behaves the same under both tools.
+	// Down sections run without a wrapping transaction so a rollback of a
+	// non-transactional migration can still apply the statements that succeed.
 	start := time.Now()
 	if err := execStatements(ctx, r.db, row.Name, statements); err != nil {
 		result.Duration = time.Since(start)
@@ -603,8 +608,7 @@ func (r *Runner) verifyChecksums(ctx context.Context, rows []AppliedRow, files [
 }
 
 // selectBatches returns the rows belonging to the steps highest distinct batch
-// numbers. vm counts batches, so one Down undoes a whole Up regardless of how
-// many files it applied.
+// numbers. One Down undoes a whole Up regardless of how many files it applied.
 func selectBatches(rows []AppliedRow, steps int) []AppliedRow {
 	seen := make(map[int]bool, len(rows))
 	batches := make([]int, 0, len(rows))

@@ -10,7 +10,6 @@ import (
 
 	"github.com/vorzela/vorm/migrate"
 	"github.com/vorzela/vorm/query"
-	"github.com/vorzela/vorm/vmtool"
 )
 
 // Facade mirrors Laravel's Schema::…
@@ -21,22 +20,13 @@ import (
 //	    t.Timestamps()
 //	})
 //
-// By default AutoMigrate is true: the SQL is written, then applied in-process by
-// the native runner. Set UseVM to shell out to the vm CLI instead.
+// By default AutoMigrate is true: the SQL is written, then applied in-process.
 type Facade struct {
 	MigrationPath string
 	Dialect       string
 	AutoMigrate   bool
 
-	// UseVM routes migrations through the external vm binary. Off by default —
-	// vorm applies migrations itself and needs no extra tooling installed.
-	UseVM bool
-
-	// EnsureVM installs the vm binary when UseVM is set and vm is missing.
-	EnsureVM bool
-
-	// DatabaseURL overrides the DATABASE_URL environment variable for the
-	// native runner.
+	// DatabaseURL overrides the DATABASE_URL environment variable.
 	DatabaseURL string
 }
 
@@ -53,7 +43,7 @@ type Result struct {
 	Name  string
 }
 
-// Create builds a Laravel-style create-table migration and auto-runs vm migrate (unless AutoMigrate is false).
+// Create builds a Laravel-style create-table migration and applies it (unless AutoMigrate is false).
 func (f *Facade) Create(table string, build func(*Blueprint)) error {
 	_, err := f.CreateResult(table, build)
 	return err
@@ -128,26 +118,16 @@ func (f *Facade) DropIfExists(table string) error {
 }
 
 // Migrate applies pending migrations once (use after several Creates with
-// AutoMigrate=false). It runs in-process unless UseVM is set.
-func (f *Facade) Migrate(extra ...string) error {
-	if f.UseVM {
-		vmPath, err := vmtool.Ensure(f.EnsureVM)
-		if err != nil {
-			return wrap("migrate", "", "", err, "install vm: vorm ensure-vm")
-		}
-		return wrap("migrate", "", "", vmtool.Migrate(vmPath, extra...), "check locks, DATABASE_URL, vorm lint")
-	}
-	return wrap("migrate", "", "", f.migrateNative(context.Background()),
+// AutoMigrate=false).
+func (f *Facade) Migrate() error {
+	return wrap("migrate", "", "", f.applyMigrations(context.Background()),
 		"check DATABASE_URL, locks, and vorm lint")
 }
 
-func (f *Facade) migrateNative(ctx context.Context) error {
-	url := f.DatabaseURL
+func (f *Facade) applyMigrations(ctx context.Context) error {
+	url := f.databaseURL()
 	if url == "" {
-		url = os.Getenv("DATABASE_URL")
-	}
-	if url == "" {
-		return fmt.Errorf("DATABASE_URL is not set (or set Facade.DatabaseURL / Facade.UseVM)")
+		return fmt.Errorf("DATABASE_URL is not set (or set Facade.DatabaseURL)")
 	}
 	conn, err := query.Open(ctx, url)
 	if err != nil {
@@ -202,10 +182,17 @@ func (f *Facade) resolveDialect() string {
 	if f.Dialect != "" {
 		return strings.ToLower(f.Dialect)
 	}
-	if url := f.DatabaseURL; url != "" {
+	if url := f.databaseURL(); url != "" {
 		return string(query.DetectDialect(url))
 	}
-	return vmtool.DetectDialect()
+	return "postgres"
+}
+
+func (f *Facade) databaseURL() string {
+	if f.DatabaseURL != "" {
+		return f.DatabaseURL
+	}
+	return os.Getenv("DATABASE_URL")
 }
 
 func (f *Facade) writeMigration(name, up, down string) (string, error) {
@@ -216,9 +203,8 @@ func (f *Facade) writeMigration(name, up, down string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	// Second-resolution timestamps match the vm scaffold format so files from
-	// both tools interleave in true chronological order. Bump on collision
-	// because a Batch can write several migrations within the same second.
+	// Second-resolution timestamps keep files in chronological order. Bump on
+	// collision because a Batch can write several migrations within the same second.
 	ts := time.Now().Unix()
 	var full string
 	for {

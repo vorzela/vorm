@@ -10,7 +10,7 @@ func TestExtractSections(t *testing.T) {
 		wantDown string
 	}{
 		{
-			name: "arrow markers as scaffolded by vm",
+			name: "arrow markers as scaffolded by vorm",
 			content: "-- Migration: create_users_table\n" +
 				"-- Created: 2024-04-05\n" +
 				"\n" +

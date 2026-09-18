@@ -261,6 +261,96 @@ func Page(ctx context.Context, db query.DB, page, perPage int) (*query.PageResul
 	}
 }
 
+func TestLowerFindByIDUsesModelPrimaryKey(t *testing.T) {
+	root := t.TempDir()
+	qdir := filepath.Join(root, "queries")
+	mdir := filepath.Join(root, "models")
+	outdir := filepath.Join(root, "gen")
+	for _, d := range []string{qdir, mdir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	model := `package models
+
+import "github.com/vorzela/vorm/query"
+
+type Group struct {
+	UUID string ` + "`db:\"uuid\"`" + `
+	Name string ` + "`db:\"name\"`" + `
+}
+
+var Groups = query.Model[Group](query.Meta{
+	Table:      "groups",
+	PrimaryKey: "uuid",
+	Columns:    []string{"uuid", "name"},
+})
+`
+	stub := `package queries
+
+import (
+	"context"
+
+	"github.com/vorzela/vorm/query"
+)
+
+// vorm:query name=GroupByID
+func GroupByID(ctx context.Context, db query.DB, id string) (*Group, error) {
+	return models.Groups.FindByID(ctx, db, id)
+}
+`
+	if err := os.WriteFile(filepath.Join(mdir, "group.go"), []byte(model), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(qdir, "groups.go"), []byte(stub), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Run(&Options{
+		QueryDir: qdir, OutDir: outdir, ModelDir: mdir,
+		Package: "gen", Dialect: "postgres", Driver: "pgx",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Pending) != 0 {
+		t.Fatalf("FindByID should lower: %+v", res.Pending)
+	}
+	body, err := os.ReadFile(filepath.Join(outdir, "queries_gen.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(body)
+	wants(t, src,
+		`WHERE "uuid" = $1`,
+		"LIMIT 1",
+		"arg.Id",
+	)
+	if strings.Contains(src, `"id" = $1`) {
+		t.Errorf("must use Meta.PrimaryKey, not id:\n%s", src)
+	}
+}
+
+func TestLowerFindByID(t *testing.T) {
+	src := lower(t, "postgres", `
+// vorm:query name=ByID
+func ByID(ctx context.Context, db query.DB, id int64) (*User, error) {
+	return Users.FindByID(ctx, db, id)
+}
+`)
+	wants(t, src,
+		`func ByID(ctx context.Context, db query.DB, arg ByIDParams) (*ByIDRow, error)`,
+		`SELECT "id", "email", "name", "active", "age", "created_at", "updated_at", "deleted_at" FROM "users" WHERE "id" = $1 AND "deleted_at" IS NULL LIMIT 1`,
+		"db.QueryContext(ctx, byIDSQL, arg.Id)",
+		"return nil, nil",
+	)
+	if strings.Contains(src, "stays on the runtime builder") {
+		t.Errorf("FindByID must lower, not stay pending:\n%s", src)
+	}
+	if strings.Contains(src, "ErrNoRows") {
+		t.Errorf("FindByID matches First (nil when absent), not FirstOrFail:\n%s", src)
+	}
+}
+
 func TestLowerSoftDeleteRestoreAndForceDelete(t *testing.T) {
 	src := lower(t, "postgres", `
 // vorm:query name=Soft

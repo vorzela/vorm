@@ -92,3 +92,38 @@ func TestScaffoldAndLintOK(t *testing.T) {
 	}
 	_ = filepath.Base(path)
 }
+
+func TestLintGoMigration(t *testing.T) {
+	dir := t.TempDir()
+	res, err := scaffold.MakeMigration("posts", scaffold.MigrationDirs{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := lint.Dir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.HasErrors() {
+		t.Fatal(lint.Format(got))
+	}
+	if _, err := os.Stat(res.MigrationFile); err != nil {
+		t.Fatal(err)
+	}
+
+	bad := filepath.Join(dir, "1700000001_bad.go")
+	if err := os.WriteFile(bad, []byte(`package migrations
+import "github.com/vorzela/vorm/schema"
+func Up(s *schema.Facade) {
+	s.Create("x", func(t *schema.Blueprint) { t.Nope("x") })
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err = lint.Dir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.HasErrors() {
+		t.Fatal("expected compile error for unknown method")
+	}
+}

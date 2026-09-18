@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
+	"unicode"
 )
 
 // RelationKind names the shape of an association.
@@ -16,6 +18,8 @@ const (
 	RelationHasOne        RelationKind = "has_one"
 	RelationHasMany       RelationKind = "has_many"
 	RelationBelongsToMany RelationKind = "belongs_to_many"
+	RelationMorphTo       RelationKind = "morph_to"
+	RelationMorphMany     RelationKind = "morph_many"
 )
 
 // Relation is the descriptive metadata for an association. Generated model code
@@ -24,11 +28,13 @@ type Relation struct {
 	Name            string
 	Kind            RelationKind
 	Table           string
+	Field           string // Go struct field populated by the loader
 	LocalKey        string
 	ForeignKey      string
 	PivotTable      string
 	PivotLocalKey   string
 	PivotForeignKey string
+	MorphType       string // morphMany: value stored in {name}_type (usually the parent table)
 }
 
 // Loader fills one relation for a batch of parents. Implementations must issue a
@@ -76,46 +82,185 @@ func Relations[P any]() []Relation {
 	return out
 }
 
-func lookupLoader[P any](name string) (Loader[P], bool) {
-	t := reflect.TypeFor[P]()
-	relationMu.RLock()
-	defer relationMu.RUnlock()
-	r, ok := relations[t][name]
-	if !ok {
-		return nil, false
-	}
-	l, ok := r.load.(Loader[P])
-	return l, ok
-}
-
-func knownRelationNames[P any]() []string {
-	rels := Relations[P]()
-	names := make([]string, len(rels))
-	for i, r := range rels {
-		names[i] = r.Name
-	}
-	return names
-}
-
 // loadRelations runs the requested loaders against the result batch.
+// Dotted names (posts.comments) load the nested relation on the related rows
+// after the parent relation has been assigned.
 func loadRelations[T any](ctx context.Context, db DB, names []string, rows []T) error {
 	if len(names) == 0 || len(rows) == 0 {
 		return nil
 	}
-	parents := make([]*T, len(rows))
-	for i := range rows {
-		parents[i] = &rows[i]
-	}
+	tree := withTree{}
 	for _, name := range names {
-		load, ok := lookupLoader[T](name)
-		if !ok {
-			return validationErr("with", "", "unknown relation %q (registered: %v)", name, knownRelationNames[T]())
+		parts := strings.Split(name, ".")
+		for i := range parts {
+			parts[i] = strings.TrimSpace(parts[i])
 		}
-		if err := load(ctx, db, parents); err != nil {
+		tree.add(parts)
+	}
+	parents := make([]reflect.Value, len(rows))
+	for i := range rows {
+		parents[i] = reflect.ValueOf(&rows[i])
+	}
+	return loadTree(ctx, db, reflect.TypeFor[T](), parents, tree)
+}
+
+type withTree map[string]withTree
+
+func (t withTree) add(parts []string) {
+	if len(parts) == 0 || parts[0] == "" {
+		return
+	}
+	if t[parts[0]] == nil {
+		t[parts[0]] = withTree{}
+	}
+	t[parts[0]].add(parts[1:])
+}
+
+func loadTree(ctx context.Context, db DB, typ reflect.Type, parents []reflect.Value, tree withTree) error {
+	if len(tree) == 0 || len(parents) == 0 {
+		return nil
+	}
+	for name, subtree := range tree {
+		reg, ok := lookupRegistered(typ, name)
+		if !ok {
+			return validationErr("with", "", "unknown relation %q (registered: %v)", name, knownRelationNamesOf(typ))
+		}
+		if err := invokeLoader(ctx, db, reg.load, parents); err != nil {
 			return fmt.Errorf("vorm/query: load relation %q: %w", name, err)
+		}
+		if len(subtree) == 0 {
+			continue
+		}
+		field := reg.rel.Field
+		if field == "" {
+			field = exportField(name)
+		}
+		childType, childPtrs := collectFieldPtrs(parents, field)
+		if childType == nil || len(childPtrs) == 0 {
+			continue
+		}
+		if err := loadTree(ctx, db, childType, childPtrs, subtree); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func lookupRegistered(t reflect.Type, name string) (registeredRelation, bool) {
+	relationMu.RLock()
+	defer relationMu.RUnlock()
+	m := relations[t]
+	if m == nil {
+		return registeredRelation{}, false
+	}
+	r, ok := m[name]
+	return r, ok
+}
+
+func knownRelationNamesOf(t reflect.Type) []string {
+	relationMu.RLock()
+	defer relationMu.RUnlock()
+	m := relations[t]
+	out := make([]string, 0, len(m))
+	for name := range m {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func invokeLoader(ctx context.Context, db DB, load any, parents []reflect.Value) error {
+	fn := reflect.ValueOf(load)
+	if fn.Kind() != reflect.Func {
+		return fmt.Errorf("vorm/query: relation loader is not a function")
+	}
+	sliceType := fn.Type().In(2)
+	slice := reflect.MakeSlice(sliceType, len(parents), len(parents))
+	elemPtr := sliceType.Elem()
+	for i, p := range parents {
+		if !p.Type().AssignableTo(elemPtr) {
+			return fmt.Errorf("vorm/query: parent type %s is not %s", p.Type(), elemPtr)
+		}
+		slice.Index(i).Set(p)
+	}
+	outs := fn.Call([]reflect.Value{
+		reflect.ValueOf(ctx),
+		reflect.ValueOf(db),
+		slice,
+	})
+	if len(outs) == 1 && !outs[0].IsNil() {
+		err, _ := outs[0].Interface().(error)
+		return err
+	}
+	return nil
+}
+
+func collectFieldPtrs(parents []reflect.Value, field string) (reflect.Type, []reflect.Value) {
+	var (
+		out      []reflect.Value
+		elemType reflect.Type
+	)
+	for _, p := range parents {
+		v := p
+		if v.Kind() == reflect.Interface {
+			v = v.Elem()
+		}
+		if v.Kind() == reflect.Pointer {
+			if v.IsNil() {
+				continue
+			}
+			v = v.Elem()
+		}
+		if !v.IsValid() {
+			continue
+		}
+		f := v.FieldByName(field)
+		if !f.IsValid() {
+			continue
+		}
+		switch f.Kind() {
+		case reflect.Slice:
+			for i := 0; i < f.Len(); i++ {
+				item := f.Index(i)
+				if item.Kind() == reflect.Pointer {
+					if item.IsNil() {
+						continue
+					}
+					out = append(out, item)
+					elemType = item.Type().Elem()
+					continue
+				}
+				if item.CanAddr() {
+					out = append(out, item.Addr())
+					elemType = item.Type()
+				}
+			}
+		case reflect.Pointer:
+			if f.IsNil() {
+				continue
+			}
+			out = append(out, f)
+			elemType = f.Type().Elem()
+		}
+	}
+	return elemType, out
+}
+
+func exportField(name string) string {
+	parts := strings.FieldsFunc(name, func(r rune) bool {
+		return r == '_' || r == '-' || unicode.IsSpace(r)
+	})
+	var b strings.Builder
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+		b.WriteString(strings.ToUpper(p[:1]))
+		if len(p) > 1 {
+			b.WriteString(p[1:])
+		}
+	}
+	return b.String()
 }
 
 // HasMany configures a one-to-many load: children whose ForeignKey matches the

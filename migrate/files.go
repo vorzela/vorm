@@ -27,10 +27,10 @@ type Migration struct {
 // Discover returns the migration files in dir ordered by timestamp, then by
 // name so that files sharing a timestamp keep a stable order.
 //
-// Only files with a numeric prefix and a .sql suffix count as migrations, which
-// is what keeps the extensions.sql, functions.sql and enums.sql helpers — and
-// any other hand-written SQL — out of the migration sequence. Subdirectories are
-// ignored, and a missing directory yields no migrations rather than an error.
+// Numbered *.sql files (legacy) and numbered *.go Blueprint files both count.
+// extensions.sql, functions.sql, enums.sql and *_test.go stay out of the
+// sequence. Subdirectories are ignored, and a missing directory yields no
+// migrations rather than an error.
 func Discover(dir string) ([]Migration, error) {
 	if dir == "" {
 		dir = DefaultDir
@@ -49,7 +49,7 @@ func Discover(dir string) ([]Migration, error) {
 			continue
 		}
 		name := entry.Name()
-		if !strings.HasSuffix(name, ".sql") {
+		if !isMigrationName(name) {
 			continue
 		}
 		ts, ok := parseTimestamp(name)
@@ -71,6 +71,18 @@ func Discover(dir string) ([]Migration, error) {
 		return out[i].Name < out[j].Name
 	})
 	return out, nil
+}
+
+func isMigrationName(name string) bool {
+	if strings.HasSuffix(name, "_test.go") {
+		return false
+	}
+	ext := filepath.Ext(name)
+	if ext != ".sql" && ext != ".go" {
+		return false
+	}
+	_, ok := parseTimestamp(name)
+	return ok
 }
 
 // parseTimestamp reads the leading run of digits from a migration file name.

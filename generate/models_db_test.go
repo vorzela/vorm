@@ -120,7 +120,8 @@ func fixtureSchema() *introspect.Schema {
 					col("id", "int8", 1, identity),
 					col("post_id", "int8", 2),
 					col("tag_id", "int8", 3),
-					col("created_at", "timestamptz", 4),
+					col("pinned", "bool", 4),
+					col("created_at", "timestamptz", 5),
 				},
 				ForeignKeys: []introspect.ForeignKey{
 					{Name: "post_tags_post_id_fkey", Columns: []string{"post_id"}, RefTable: "posts", RefColumns: []string{"id"}},
@@ -237,6 +238,9 @@ func TestModelsFromSchemaEmitsRelations(t *testing.T) {
 	}
 	if !strings.Contains(rels, "query.RelationBelongsToMany") || !strings.Contains(rels, `PivotTable: "post_tags"`) {
 		t.Errorf("pivot table should produce belongs-to-many\n%s", rels)
+	}
+	if !strings.Contains(rels, "func (m *Post) TagsRelation()") || !strings.Contains(rels, "func (m *Post) AttachTags(") {
+		t.Errorf("belongs-to-many should emit Attach/Relation helpers\n%s", rels)
 	}
 	if !strings.Contains(rels, "query.LoadHasMany") || !strings.Contains(rels, "query.LoadBelongsTo") {
 		t.Error("relation loaders should use the batched helpers")
@@ -366,6 +370,51 @@ func TestSingularPlural(t *testing.T) {
 	}
 	if got := Plural("box"); got != "boxes" {
 		t.Errorf("Plural(box) = %q", got)
+	}
+}
+
+func TestModelsFromSchemaMorphs(t *testing.T) {
+	col := func(name, dbType string, pos int) introspect.Column {
+		return introspect.Column{Name: name, DBType: dbType, FullType: dbType, Position: pos}
+	}
+	s := &introspect.Schema{
+		Dialect: query.DialectPostgres,
+		Tables: []introspect.Table{
+			{
+				Name: "posts", PrimaryKey: []string{"id"},
+				Columns: []introspect.Column{col("id", "int8", 1), col("title", "varchar", 2)},
+			},
+			{
+				Name: "comments", PrimaryKey: []string{"id"},
+				Columns: []introspect.Column{
+					col("id", "int8", 1),
+					col("commentable_type", "varchar", 2),
+					col("commentable_id", "int8", 3),
+					col("body", "text", 4),
+				},
+			},
+		},
+	}
+	dir := t.TempDir()
+	if _, err := ModelsFromSchema(SchemaOptions{
+		Schema: s, ModelDir: dir, Package: "models", Dialect: query.DialectPostgres, EmitRelations: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	comment := readGenerated(t, dir, "comment_gen.go")
+	if !strings.Contains(comment, "Commentable any") {
+		t.Errorf("morphTo field missing:\n%s", comment)
+	}
+	rels := readGenerated(t, dir, "relations_gen.go")
+	if !strings.Contains(rels, "query.RelationMorphTo") || !strings.Contains(rels, "query.LoadMorphTo") {
+		t.Errorf("morphTo loader missing:\n%s", rels)
+	}
+	if !strings.Contains(rels, "query.RelationMorphMany") {
+		t.Errorf("morphMany loader missing:\n%s", rels)
+	}
+	post := readGenerated(t, dir, "post_gen.go")
+	if !strings.Contains(post, "Comments []Comment") {
+		t.Errorf("morphMany field missing:\n%s", post)
 	}
 }
 

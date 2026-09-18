@@ -6,9 +6,8 @@ import (
 	"github.com/vorzela/vorm/query"
 )
 
-// DetectDialect infers the dialect from a database URL or DSN the same way the
-// vm tool picks its driver. Anything that does not look like MySQL/MariaDB is
-// treated as PostgreSQL.
+// DetectDialect infers the dialect from a database URL or DSN. Anything that
+// does not look like MySQL/MariaDB is treated as PostgreSQL.
 func DetectDialect(databaseURL string) query.Dialect {
 	dsn := strings.ToLower(databaseURL)
 	for _, marker := range []string{"mysql://", "mariadb", "@tcp(", "tcp("} {

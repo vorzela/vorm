@@ -49,7 +49,6 @@ func TestFacadeWritesMigration(t *testing.T) {
 	f := &schema.Facade{
 		MigrationPath: dir,
 		AutoMigrate:   false,
-		EnsureVM:      false,
 		Dialect:       "postgres",
 	}
 	if err := f.Create("accounts", func(t *schema.Blueprint) {

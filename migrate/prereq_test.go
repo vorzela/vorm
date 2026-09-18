@@ -69,7 +69,7 @@ func TestPrereqAppliesInOrderThenCaches(t *testing.T) {
 		t.Error("functions.sql was not applied")
 	}
 
-	for _, sidecar := range []string{".vm_extensions_hash", ".vm_functions_hash", ".vm_enums_hash"} {
+	for _, sidecar := range []string{ExtensionsHashFile, FunctionsHashFile, EnumsHashFile} {
 		content, err := os.ReadFile(filepath.Join(dir, sidecar))
 		if err != nil {
 			t.Errorf("read %s: %v", sidecar, err)
@@ -133,7 +133,7 @@ func TestPrereqSkipsFilesWithNothingEnabled(t *testing.T) {
 	if len(db.statements()) != 0 {
 		t.Errorf("executed %v, want nothing", db.statements())
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".vm_extensions_hash")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(dir, ExtensionsHashFile)); !errors.Is(err, os.ErrNotExist) {
 		t.Error("a file with nothing enabled should not write a hash sidecar")
 	}
 }
@@ -148,7 +148,7 @@ func TestPrereqSkippedOnMySQL(t *testing.T) {
 	if got := db.statements(); len(got) != 3 || got[1] != "CREATE TABLE a (id INT);" {
 		t.Errorf("executed = %v, want only the migration", got)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".vm_extensions_hash")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(dir, ExtensionsHashFile)); !errors.Is(err, os.ErrNotExist) {
 		t.Error("MySQL runs should not write prerequisite hashes")
 	}
 }
@@ -165,7 +165,7 @@ func TestPrereqDryRun(t *testing.T) {
 	if len(db.statements()) != 0 {
 		t.Errorf("executed %v, want nothing", db.statements())
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".vm_enums_hash")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(dir, EnumsHashFile)); !errors.Is(err, os.ErrNotExist) {
 		t.Error("a dry run should not write hash sidecars")
 	}
 }
@@ -185,7 +185,7 @@ func TestPrereqFailureStopsRun(t *testing.T) {
 	if len(report.Steps) != 0 || len(db.snapshot()) != 0 {
 		t.Error("no migration should run when a prerequisite fails")
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".vm_extensions_hash")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(dir, ExtensionsHashFile)); !errors.Is(err, os.ErrNotExist) {
 		t.Error("a failed prerequisite must not record its hash")
 	}
 }

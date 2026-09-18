@@ -47,6 +47,23 @@ type GetUserByEmailParams struct {
 	Email string
 }
 
+// UserByIDRow is the typed result shape for UserByID (sqlc-style; never SELECT *).
+type UserByIDRow struct {
+	ID        int64      `json:"id" db:"id"`
+	Email     string     `json:"email" db:"email"`
+	Name      string     `json:"name" db:"name"`
+	Active    bool       `json:"active" db:"active"`
+	Age       int        `json:"age" db:"age"`
+	CreatedAt time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
+	DeletedAt *time.Time `json:"deleted_at" db:"deleted_at"`
+}
+
+// UserByIDParams holds bound arguments for UserByID (type-safe; never string-concat into SQL).
+type UserByIDParams struct {
+	Id int64
+}
+
 // GetUserOrFailRow is the typed result shape for GetUserOrFail (sqlc-style; never SELECT *).
 type GetUserOrFailRow struct {
 	ID        int64      `json:"id" db:"id"`
@@ -282,6 +299,27 @@ func GetUserByEmail(ctx context.Context, db query.DB, arg GetUserByEmailParams) 
 		return nil, nil
 	}
 	row, err := scanGetUserByEmailRow(rows)
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+// UserByID is generated from // vorm:query in users.go
+func UserByID(ctx context.Context, db query.DB, arg UserByIDParams) (*UserByIDRow, error) {
+	const userByIDSQL = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at", "deleted_at" FROM "users" WHERE "id" = $1 AND "deleted_at" IS NULL LIMIT 1`
+	rows, err := db.QueryContext(ctx, userByIDSQL, arg.Id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+	row, err := scanUserByIDRow(rows)
 	if err != nil {
 		return nil, err
 	}
@@ -660,6 +698,12 @@ func scanListActiveAdultsRow(rows query.Rows) (ListActiveAdultsRow, error) {
 
 func scanGetUserByEmailRow(rows query.Rows) (GetUserByEmailRow, error) {
 	var row GetUserByEmailRow
+	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt, &row.DeletedAt)
+	return row, err
+}
+
+func scanUserByIDRow(rows query.Rows) (UserByIDRow, error) {
+	var row UserByIDRow
 	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt, &row.DeletedAt)
 	return row, err
 }

@@ -45,7 +45,8 @@ type StubFunc struct {
 
 	// Action is the terminal builder call: Get, First, FirstOrFail, Count,
 	// Exists, Paginate, Create, Update, Delete, SoftDelete, ForceDelete,
-	// Restore. Empty means the chain could not be lowered.
+	// Restore. FindByID is lowered as First plus a primary-key Where.
+	// Empty means the chain could not be lowered.
 	Action string
 
 	Selects    []string
@@ -536,6 +537,8 @@ func lowerCallChain(call *ast.CallExpr, st *StubFunc, models map[string]ModelSpe
 	case "Get", "First", "FirstOrFail", "Count", "Exists", "Delete", "Restore":
 		st.Action = action
 		return lowerBuilderChain(sel.X, st, models)
+	case "FindByID":
+		return lowerFindByID(call, sel.X, st, models)
 	case "OffsetPage":
 		st.Action = "Paginate"
 		if len(call.Args) >= 4 {
@@ -607,6 +610,37 @@ func parsePageRequest(expr ast.Expr) (page, perPage string, ok bool) {
 		}
 	}
 	return page, perPage, true
+}
+
+// lowerFindByID turns Users.FindByID(ctx, db, id) into First + WHERE pk = id,
+// matching query.Entity.FindByID.
+func lowerFindByID(call *ast.CallExpr, recv ast.Expr, st *StubFunc, models map[string]ModelSpec) bool {
+	if len(call.Args) < 3 {
+		st.PendingWhy = "FindByID needs an id argument"
+		return false
+	}
+	st.Action = "First"
+	if !lowerEntityStart(recv, st, models) {
+		return false
+	}
+	st.Wheres = prependWhere(st.Wheres, WhereSpec{
+		Col:     modelPrimaryKey(st.Entity, models),
+		Op:      "=",
+		ArgExpr: exprString(call.Args[2]),
+	})
+	return true
+}
+
+func modelPrimaryKey(entity string, models map[string]ModelSpec) string {
+	if ms, ok := models[entity]; ok && ms.PrimaryKey != "" {
+		return ms.PrimaryKey
+	}
+	if i := strings.LastIndex(entity, "."); i >= 0 {
+		if ms, ok := models[entity[i+1:]]; ok && ms.PrimaryKey != "" {
+			return ms.PrimaryKey
+		}
+	}
+	return "id"
 }
 
 func lowerEntityStart(x ast.Expr, st *StubFunc, models map[string]ModelSpec) bool {

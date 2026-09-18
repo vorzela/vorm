@@ -71,7 +71,7 @@ func (c *Config) ToIntrospectOptions() introspect.Options {
 	}
 }
 
-// ToMigrateOptions maps config onto the native migration runner.
+// ToMigrateOptions maps config onto the migration runner.
 func (c *Config) ToMigrateOptions() migrate.Options {
 	c.applyDerived()
 	return migrate.Options{

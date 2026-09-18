@@ -13,11 +13,9 @@ import (
 	"github.com/vorzela/vorm/config"
 	"github.com/vorzela/vorm/migrate"
 	"github.com/vorzela/vorm/query"
-	"github.com/vorzela/vorm/vmtool"
 )
 
-// migrateFlags are the flags shared by the migration commands. They mirror the
-// vm CLI so muscle memory carries over.
+// migrateFlags are the flags shared by the migration commands.
 type migrateFlags struct {
 	dsn          string
 	path         string
@@ -90,15 +88,11 @@ func parseMigrateFlags(args []string) (migrateFlags, error) {
 	return f, nil
 }
 
-// cmdMigrate runs migrations in-process. It only shells out to vm when the
-// project pins RUNNER=vm.
+// cmdMigrate runs migrations in-process.
 func cmdMigrate(cmd string, args []string) error {
 	cfg, err := config.Load(".")
 	if err != nil {
 		return err
-	}
-	if !cfg.UseNativeRunner() {
-		return vmtool.Run(true, append([]string{cmd}, args...)...)
 	}
 
 	flags, err := parseMigrateFlags(args)

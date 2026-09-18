@@ -22,6 +22,14 @@ type relPost struct {
 	ID     int64  `db:"id"`
 	UserID int64  `db:"user_id"`
 	Title  string `db:"title"`
+
+	Comments []relComment `db:"-"`
+}
+
+type relComment struct {
+	ID     int64  `db:"id"`
+	PostID int64  `db:"post_id"`
+	Body   string `db:"body"`
 }
 
 type relTeam struct {
@@ -35,10 +43,11 @@ type relTag struct {
 }
 
 var (
-	relUsers = Model[relUser](Meta{Table: "rel_users", Columns: []string{"id", "email", "team_id"}})
-	relPosts = Model[relPost](Meta{Table: "rel_posts", Columns: []string{"id", "user_id", "title"}})
-	relTeams = Model[relTeam](Meta{Table: "rel_teams", Columns: []string{"id", "name"}})
-	relTags  = Model[relTag](Meta{Table: "rel_tags", Columns: []string{"id", "name"}})
+	relUsers    = Model[relUser](Meta{Table: "rel_users", Columns: []string{"id", "email", "team_id"}})
+	relPosts    = Model[relPost](Meta{Table: "rel_posts", Columns: []string{"id", "user_id", "title"}})
+	relTeams    = Model[relTeam](Meta{Table: "rel_teams", Columns: []string{"id", "name"}})
+	relTags     = Model[relTag](Meta{Table: "rel_tags", Columns: []string{"id", "name"}})
+	relComments = Model[relComment](Meta{Table: "rel_comments", Columns: []string{"id", "post_id", "body"}})
 )
 
 func TestLoadHasManyIssuesOneQueryForWholeBatch(t *testing.T) {
@@ -158,6 +167,7 @@ func TestLoadBelongsToManyUsesTwoQueries(t *testing.T) {
 func TestWithRunsRegisteredLoader(t *testing.T) {
 	RegisterRelation(Relation{
 		Name:       "posts",
+		Field:      "Posts",
 		Kind:       RelationHasMany,
 		Table:      "rel_posts",
 		LocalKey:   "id",
@@ -251,5 +261,62 @@ func TestLoadHasManyRequiresConfiguration(t *testing.T) {
 	var e *Error
 	if !errors.As(err, &e) {
 		t.Fatal("expected *query.Error")
+	}
+}
+
+func TestWithNestedRelation(t *testing.T) {
+	RegisterRelation(Relation{
+		Name:       "posts",
+		Field:      "Posts",
+		Kind:       RelationHasMany,
+		Table:      "rel_posts",
+		LocalKey:   "id",
+		ForeignKey: "user_id",
+	}, func(ctx context.Context, db DB, parents []*relUser) error {
+		return LoadHasMany(ctx, db, parents, HasMany[relUser, relPost]{
+			Related:    relPosts,
+			ForeignKey: "user_id",
+			ParentKey:  func(u *relUser) any { return u.ID },
+			ChildKey:   func(p *relPost) any { return p.UserID },
+			Assign:     func(u *relUser, ps []relPost) { u.Posts = ps },
+		})
+	})
+	RegisterRelation(Relation{
+		Name:       "comments",
+		Field:      "Comments",
+		Kind:       RelationHasMany,
+		Table:      "rel_comments",
+		LocalKey:   "id",
+		ForeignKey: "post_id",
+	}, func(ctx context.Context, db DB, parents []*relPost) error {
+		return LoadHasMany(ctx, db, parents, HasMany[relPost, relComment]{
+			Related:    relComments,
+			ForeignKey: "post_id",
+			ParentKey:  func(p *relPost) any { return p.ID },
+			ChildKey:   func(c *relComment) any { return c.PostID },
+			Assign:     func(p *relPost, cs []relComment) { p.Comments = cs },
+		})
+	})
+
+	db := (&fakeDB{}).
+		on("rel_users", []string{"id", "email", "team_id"},
+			[]any{int64(1), "a@x.io", int64(5)},
+		).
+		on("rel_posts", []string{"id", "user_id", "title"},
+			[]any{int64(10), int64(1), "hello"},
+		).
+		on("rel_comments", []string{"id", "post_id", "body"},
+			[]any{int64(20), int64(10), "nice"},
+		)
+
+	got, err := relUsers.With("posts.comments").Get(context.Background(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || len(got[0].Posts) != 1 || len(got[0].Posts[0].Comments) != 1 {
+		t.Fatalf("nested relation not loaded: %+v", got)
+	}
+	if got[0].Posts[0].Comments[0].Body != "nice" {
+		t.Fatalf("comment body: %+v", got[0].Posts[0].Comments)
 	}
 }

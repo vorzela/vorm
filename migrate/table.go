@@ -9,7 +9,7 @@ import (
 	"github.com/vorzela/vorm/query"
 )
 
-// tableName is not configurable: vm and this package must read the same state.
+// tableName is not configurable: changing it would lose applied-migration history.
 const tableName = "migrations"
 
 const createTablePostgres = `CREATE TABLE IF NOT EXISTS migrations (

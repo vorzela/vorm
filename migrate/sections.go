@@ -43,8 +43,8 @@ func extractSection(content string, up bool) string {
 	return strings.TrimSpace(strings.Join(body, "\n"))
 }
 
-// isUpMarker recognises the Up header in every layout vm accepts: the arrow
-// style it scaffolds, goose, golang-migrate, and a plain "-- Up" line.
+// isUpMarker recognises the Up header in every accepted layout: the arrow
+// style vorm scaffolds, goose, golang-migrate, and a plain "-- Up" line.
 func isUpMarker(line string) bool {
 	return strings.Contains(line, "⬆") ||
 		strings.Contains(line, "+goose Up") ||

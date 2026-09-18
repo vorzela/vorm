@@ -24,12 +24,12 @@ type prereqKind struct {
 }
 
 var prereqKinds = map[string]prereqKind{
-	"extensions": {"extensions", migrate.ExtensionsFile, ".vm_extensions_hash", "extension"},
-	"enums":      {"enums", migrate.EnumsFile, ".vm_enums_hash", "enum type"},
-	"functions":  {"functions", migrate.FunctionsFile, ".vm_functions_hash", "function"},
+	"extensions": {"extensions", migrate.ExtensionsFile, migrate.ExtensionsHashFile, "extension"},
+	"enums":      {"enums", migrate.EnumsFile, migrate.EnumsHashFile, "enum type"},
+	"functions":  {"functions", migrate.FunctionsFile, migrate.FunctionsHashFile, "function"},
 }
 
-// cmdPrereq runs `vorm extensions|enums|functions [sync|status|drop]` natively.
+// cmdPrereq runs `vorm extensions|enums|functions [sync|status|drop]`.
 // Sync is the default: create the file from a template when it is missing, then
 // apply whatever it enables.
 func cmdPrereq(cmd string, args []string) error {

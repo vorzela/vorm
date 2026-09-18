@@ -106,8 +106,9 @@ func newBuilder[T any](meta Meta) *Builder[T] {
 
 // With eager-loads registered relations after the rows are fetched. Each relation
 // costs a bounded number of extra queries for the whole result set, never one per row.
+// Dotted names load nested relations (posts.comments).
 //
-//	Users.Where("active", true).With("posts", "profile").Get(ctx, db)
+//	Users.Where("active", true).With("posts", "profile", "posts.comments").Get(ctx, db)
 func (b *Builder[T]) With(relations ...string) *Builder[T] {
 	b.with = append(b.with, relations...)
 	return b

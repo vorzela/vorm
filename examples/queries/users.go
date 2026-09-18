@@ -73,6 +73,14 @@ func GetUserByEmail(ctx context.Context, db query.DB, email string) (*User, erro
 	return Users.Where("email", email).First(ctx, db)
 }
 
+// UserByID — Entity.FindByID, lowered to First + WHERE on the primary key.
+//
+// vorm:query name=UserByID
+func UserByID(ctx context.Context, db query.DB, id int64) (*User, error) {
+	ctx = query.WithMapper(ctx, scanUser)
+	return Users.FindByID(ctx, db, id)
+}
+
 // GetUserOrFail — First that turns "no rows" into an error.
 //
 // vorm:query name=GetUserOrFail

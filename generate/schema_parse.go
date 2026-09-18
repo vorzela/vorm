@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode"
+
+	"github.com/vorzela/vorm/schema"
 )
 
 // TableSpec is extracted from Schema.Create Blueprint callbacks.
@@ -44,7 +46,7 @@ func ParseSchemaDir(dir string) ([]TableSpec, error) {
 	}
 	var out []TableSpec
 	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return err
 		}
 		specs, err := ParseSchemaFile(path)
@@ -71,14 +73,17 @@ func ParseSchemaFile(path string) ([]TableSpec, error) {
 			return true
 		}
 		table, build := matchCreateCall(call)
-		if table == "" || build == nil {
+		if table != "" && build != nil {
+			spec := TableSpec{Table: table}
+			for _, c := range outerCalls(build.Body) {
+				applyBlueprintCall(c, &spec)
+			}
+			specs = append(specs, spec)
 			return true
 		}
-		spec := TableSpec{Table: table}
-		for _, c := range outerCalls(build.Body) {
-			applyBlueprintCall(c, &spec)
+		if left, right, ok := matchBelongsToMany(call); ok {
+			specs = append(specs, pivotSpec(left, right))
 		}
-		specs = append(specs, spec)
 		return true
 	})
 	return specs, nil
@@ -102,6 +107,34 @@ func matchCreateCall(call *ast.CallExpr) (table string, build *ast.FuncLit) {
 		return "", nil
 	}
 	return table, fl
+}
+
+func matchBelongsToMany(call *ast.CallExpr) (left, right string, ok bool) {
+	sel, okSel := call.Fun.(*ast.SelectorExpr)
+	if !okSel || sel.Sel == nil || sel.Sel.Name != "BelongsToMany" {
+		return "", "", false
+	}
+	if len(call.Args) < 2 {
+		return "", "", false
+	}
+	left = stringArg(call.Args, 0)
+	right = stringArg(call.Args, 1)
+	if left == "" || right == "" {
+		return "", "", false
+	}
+	return left, right, true
+}
+
+func pivotSpec(left, right string) TableSpec {
+	return TableSpec{
+		Table:      schema.PivotName(left, right),
+		HasID:      true,
+		Timestamps: true,
+		Columns: []ColSpec{
+			{Name: schema.Singularize(left) + "_id", Kind: "bigint", GoType: "int64"},
+			{Name: schema.Singularize(right) + "_id", Kind: "bigint", GoType: "int64"},
+		},
+	}
 }
 
 func outerCalls(body *ast.BlockStmt) []*ast.CallExpr {
@@ -170,6 +203,13 @@ func applyBlueprintCall(call *ast.CallExpr, spec *TableSpec) {
 	case "BelongsTo":
 		col := stringArg(rootArgs, 0)
 		addCol(spec, col, "bigint", "int64", flags)
+	case "Morphs":
+		prefix := stringArg(rootArgs, 0)
+		if prefix == "" {
+			return
+		}
+		addCol(spec, prefix+"_type", "string", "string", flags)
+		addCol(spec, prefix+"_id", "bigint", "int64", flags)
 	}
 }
 

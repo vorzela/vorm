@@ -9,7 +9,7 @@ go install github.com/vorzela/vorm/cmd/vorm@latest
 
 export DATABASE_URL=postgres://user:pass@localhost:5432/app?sslmode=disable
 vorm init                 # write .vorm (dialect detected from DATABASE_URL)
-vorm make migration posts # scaffold Blueprint + model + query stub
+vorm make migration posts # timestamped Blueprint Up/Down in migrations/
 vorm migrate              # apply migrations in-process
 vorm generate             # models from the database + typed queries from stubs
 ```
@@ -18,18 +18,16 @@ vorm generate             # models from the database + typed queries from stubs
 
 | Path | Who writes it | Contents |
 |------|---------------|----------|
-| `migrations/` | you / `vorm make` | SQL applied by the runner |
+| `migrations/` | you / `vorm make` | numbered Blueprint `*.go` (and legacy `*.sql`) |
 | `migrations/{extensions,enums,functions}.sql` | you | declarative PostgreSQL prerequisites |
 | `queries/` | you | `// vorm:query` stubs |
-| `schema/migrations/` | you (optional) | Laravel-style `Blueprint` Go |
 | **`models/`** | `vorm generate models` | **never hand-edit** — structs, enums, indexes, relations |
 | **`vorm/gen/`** | `vorm generate` | **never hand-edit** — `*Row` / `*Params` + SQL |
 
 ## Migrations run in-process
 
-The runner is a Go package (`migrate`), not a subprocess. It uses the same file
-format, `migrations` tracking table, checksums, batches and advisory locks as
-the `vm` CLI, so an existing project can switch either way.
+The runner is a Go package (`migrate`), not a subprocess. It records applied
+files in a `migrations` table with checksums, batch numbers and advisory locks.
 
 ```bash
 vorm migrate [--steps=N] [--dry-run] [--verbose]
@@ -38,23 +36,28 @@ vorm rollback [--steps=1] [--migration=create_users] [--steps=all]
 vorm fresh --force          # roll everything back, then re-apply
 ```
 
-A migration file is one `.sql` with both directions:
+A migration file is numbered Blueprint Go (`{unix}_{name}.go`) with `Up`/`Down`.
+Legacy numbered `.sql` files still apply. `vorm make migration posts` writes Go;
+the runner compiles the Blueprint AST to SQL and never executes `Up`/`Down`.
 
-```sql
--- ⬆ Up (Run when migrating forward)
-CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, title TEXT NOT NULL);
+```go
+func Up(s *schema.Facade) {
+	s.Create("posts", func(t *schema.Blueprint) {
+		t.ID()
+		t.String("title")
+		t.Timestamps()
+	})
+}
 
--- ⬇ Down (Run when rolling back)
-DROP TABLE IF EXISTS posts;
+func Down(s *schema.Facade) {
+	s.DropIfExists("posts")
+}
 ```
 
 `vorm migrate` lints first (`--no-lint` to skip), takes a lock so two deploys
 cannot race, runs each file in a transaction where the dialect allows it, and
 records a SHA-256 of the file. `vorm status` flags a file that changed after it
 was applied.
-
-Set `RUNNER=vm` in `.vorm` to shell out to the `vm` binary instead; nothing else
-in vorm needs it.
 
 ### PostgreSQL prerequisites
 
@@ -107,7 +110,7 @@ var Users = query.Model[User](query.Meta{
 })
 ```
 
-Without a reachable database, `--from-blueprint` parses `schema/migrations/`
+Without a reachable database, `--from-blueprint` parses numbered `migrations/*.go`
 instead. `vorm introspect [--json]` prints exactly what vorm reads.
 
 ## Queries: runtime builder and generated functions
@@ -247,7 +250,6 @@ vorm config lint
 | `OUT_DIR` | `./vorm/<PACKAGE>` | where `queries_gen.go` is written |
 | `DRIVER` | `pgx` | `pgx` or `pq` |
 | `DIALECT` | `postgres` | `postgres`, `mysql`, `mariadb` |
-| `RUNNER` | `native` | `native` (in-process) or `vm` |
 | `MIGRATION_PATH` | `./migrations` | SQL directory |
 | `MODEL_SOURCE` | `db` | `db` (introspect) or `blueprint` |
 | `MODEL_DIR` / `MODEL_PACKAGE` | `./models` / `models` | generated models |
@@ -260,14 +262,6 @@ vorm config lint
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — pipelines and package boundaries
 - [`LLM.md`](LLM.md) — rules for agents working in a vorm project
 - [`examples/`](examples/) — stubs and their generated output
-
-## Relationship to Vorzela Migrate
-
-[Vorzela Migrate](https://github.com/vorzela/vorzela-migrate) (`vm`) is a
-standalone migration CLI. vorm reads and writes the same migration files,
-tracking table, checksums and locks, so a project can use either tool, or both.
-`vm` additionally offers schema drift detection and online/zero-downtime DDL;
-vorm runs migrations inside your own binary with no external dependency.
 
 ## License
 

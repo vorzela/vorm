@@ -13,7 +13,6 @@ import (
 	"github.com/vorzela/vorm/query"
 	"github.com/vorzela/vorm/scaffold"
 	"github.com/vorzela/vorm/schema"
-	"github.com/vorzela/vorm/vmtool"
 )
 
 func main() {
@@ -65,14 +64,8 @@ func main() {
 		if err := cmdGenerate(args); err != nil {
 			fatal(err)
 		}
-	case "ensure-vm":
-		p, err := vmtool.Ensure(true)
-		if err != nil {
-			fatal(err)
-		}
-		fmt.Println(p)
 	case "version", "--version":
-		fmt.Println("vorm 0.1.0-dev (Vorzela v3)")
+		fmt.Println("vorm 0.1.0 (Vorzela v3)")
 	case "help", "--help", "-h":
 		usage()
 	default:
@@ -94,17 +87,13 @@ func cmdInit(args []string) error {
 		return fmt.Errorf("%s already exists (use vorm init --force to overwrite)", path)
 	}
 	cfg := config.Default()
-	// A live DATABASE_URL is the most reliable dialect signal; fall back to
-	// whatever the vm config says.
 	if url := os.Getenv("DATABASE_URL"); url != "" {
 		cfg.Dialect = string(query.DetectDialect(url))
-	} else if d := vmtool.DetectDialect(); d != "" {
-		cfg.Dialect = d
 	}
 	if err := cfg.Write(path); err != nil {
 		return err
 	}
-	fmt.Printf("wrote %s (PACKAGE=%s, DIALECT=%s, RUNNER=%s)\n", path, cfg.Package, cfg.Dialect, cfg.Runner)
+	fmt.Printf("wrote %s (PACKAGE=%s, DIALECT=%s)\n", path, cfg.Package, cfg.Dialect)
 	fmt.Println("next: export DATABASE_URL=… && vorm migrate && vorm generate")
 	return nil
 }
@@ -208,18 +197,14 @@ func cmdMake(args []string) error {
 			return err
 		}
 		res, err := scaffold.MakeMigration(args[1], scaffold.MigrationDirs{
-			SchemaDir: cfg.SchemaDir,
-			ModelDir:  cfg.ModelDir,
-			QueryDir:  cfg.QueryDir,
+			Dir:     cfg.MigrationPath,
+			Dialect: resolveDialect(cfg),
 		})
 		if err != nil {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "vorm: wrote %s\n", res.MigrationFile)
-		fmt.Fprintf(os.Stderr, "vorm: wrote %s\n", res.ModelFile)
-		fmt.Fprintf(os.Stderr, "vorm: wrote %s\n", res.QueryFile)
-		fmt.Fprintf(os.Stderr, "vorm: next → edit Blueprint in %s → call %s(nil) → vorm generate models && vorm generate\n",
-			res.MigrationFile, res.FuncName)
+		fmt.Fprintf(os.Stderr, "vorm: next → edit Up/Down in that file → vorm migrate → vorm generate\n")
 		return nil
 	case "enum":
 		if len(args) < 3 {
@@ -236,8 +221,7 @@ func cmdMake(args []string) error {
 	}
 }
 
-// resolveDialect prefers the project config, then the connection string, and
-// only then a neighbouring .vm file. It never needs the vm binary.
+// resolveDialect prefers the project config, then the connection string.
 func resolveDialect(cfg *config.Config) string {
 	if cfg != nil {
 		if cfg.Dialect != "" {
@@ -250,11 +234,11 @@ func resolveDialect(cfg *config.Config) string {
 	if url := os.Getenv("DATABASE_URL"); url != "" {
 		return string(query.DetectDialect(url))
 	}
-	return vmtool.DetectDialect()
+	return "postgres"
 }
 
 // makeFacade builds the schema writer used by `vorm make enum|extension`. It
-// only writes migration files; nothing here runs SQL or shells out.
+// only writes migration files; nothing here runs SQL.
 func makeFacade() *schema.Facade {
 	cfg, err := config.Load(".")
 	if err != nil {
@@ -407,13 +391,12 @@ Setup:
   vorm config set PACKAGE=vormgen   # avoid conflicts with another "gen"
   vorm config lint
 
-Migrations (native runner — no vm binary needed):
-  vorm make migration posts         # scaffold Blueprint + model + query stub
+Migrations:
+  vorm make migration posts         # timestamped Blueprint Up/Down in migrations/
   vorm migrate [--dry-run] [--steps=N]
   vorm rollback [--steps=1] [--migration=name] [--all]
   vorm status
   vorm fresh | vorm refresh         # destructive: drop/recreate, then re-apply
-  vorm config set RUNNER=vm         # opt back into shelling out to the vm CLI
 
 PostgreSQL prerequisites (declarative files next to the migrations):
   vorm extensions                   # sync migrations/extensions.sql
@@ -431,10 +414,9 @@ Code generation:
     --dsn=… --driver=pgx|pq --package=gen
 
 Layout:
-  schema/migrations/   Blueprint Go (you)
+  migrations/          numbered Blueprint *.go (and legacy *.sql)
   queries/             // vorm:query stubs (you)
   models/              vorm generate models — NEVER hand-edit
-  migrations/          SQL applied by the runner
   vorm/gen/            default OUT_DIR (package gen)
 
 Docs: README.md  docs/USAGE.md  docs/MIGRATIONS.md  LLM.md

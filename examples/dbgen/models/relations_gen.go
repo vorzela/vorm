@@ -14,7 +14,7 @@ import (
 // number of queries — there is no per-row lookup.
 func init() {
 	query.RegisterRelation(query.Relation{
-		Name: "author_posts", Kind: query.RelationHasMany, Table: "posts",
+		Name: "author_posts", Kind: query.RelationHasMany, Table: "posts", Field: "AuthorPosts",
 		LocalKey: "id", ForeignKey: "author_id",
 	}, func(ctx context.Context, db query.DB, rows []*User) error {
 		return query.LoadHasMany(ctx, db, rows, query.HasMany[User, Post]{
@@ -27,7 +27,7 @@ func init() {
 	})
 
 	query.RegisterRelation(query.Relation{
-		Name: "editor_posts", Kind: query.RelationHasMany, Table: "posts",
+		Name: "editor_posts", Kind: query.RelationHasMany, Table: "posts", Field: "EditorPosts",
 		LocalKey: "id", ForeignKey: "editor_id",
 	}, func(ctx context.Context, db query.DB, rows []*User) error {
 		return query.LoadHasMany(ctx, db, rows, query.HasMany[User, Post]{
@@ -40,7 +40,7 @@ func init() {
 	})
 
 	query.RegisterRelation(query.Relation{
-		Name: "manager", Kind: query.RelationBelongsTo, Table: "users",
+		Name: "manager", Kind: query.RelationBelongsTo, Table: "users", Field: "Manager",
 		LocalKey: "manager_id", ForeignKey: "id",
 	}, func(ctx context.Context, db query.DB, rows []*User) error {
 		return query.LoadBelongsTo(ctx, db, rows, query.BelongsTo[User, User]{
@@ -53,7 +53,7 @@ func init() {
 	})
 
 	query.RegisterRelation(query.Relation{
-		Name: "profile", Kind: query.RelationHasOne, Table: "profiles",
+		Name: "profile", Kind: query.RelationHasOne, Table: "profiles", Field: "Profile",
 		LocalKey: "id", ForeignKey: "user_id",
 	}, func(ctx context.Context, db query.DB, rows []*User) error {
 		return query.LoadHasMany(ctx, db, rows, query.HasMany[User, Profile]{
@@ -70,7 +70,7 @@ func init() {
 	})
 
 	query.RegisterRelation(query.Relation{
-		Name: "users", Kind: query.RelationHasMany, Table: "users",
+		Name: "users", Kind: query.RelationHasMany, Table: "users", Field: "Users",
 		LocalKey: "id", ForeignKey: "manager_id",
 	}, func(ctx context.Context, db query.DB, rows []*User) error {
 		return query.LoadHasMany(ctx, db, rows, query.HasMany[User, User]{
@@ -83,7 +83,7 @@ func init() {
 	})
 
 	query.RegisterRelation(query.Relation{
-		Name: "author", Kind: query.RelationBelongsTo, Table: "users",
+		Name: "author", Kind: query.RelationBelongsTo, Table: "users", Field: "Author",
 		LocalKey: "author_id", ForeignKey: "id",
 	}, func(ctx context.Context, db query.DB, rows []*Post) error {
 		return query.LoadBelongsTo(ctx, db, rows, query.BelongsTo[Post, User]{
@@ -96,7 +96,7 @@ func init() {
 	})
 
 	query.RegisterRelation(query.Relation{
-		Name: "editor", Kind: query.RelationBelongsTo, Table: "users",
+		Name: "editor", Kind: query.RelationBelongsTo, Table: "users", Field: "Editor",
 		LocalKey: "editor_id", ForeignKey: "id",
 	}, func(ctx context.Context, db query.DB, rows []*Post) error {
 		return query.LoadBelongsTo(ctx, db, rows, query.BelongsTo[Post, User]{
@@ -109,7 +109,7 @@ func init() {
 	})
 
 	query.RegisterRelation(query.Relation{
-		Name: "tags", Kind: query.RelationBelongsToMany, Table: "tags",
+		Name: "tags", Kind: query.RelationBelongsToMany, Table: "tags", Field: "Tags",
 		LocalKey: "id", ForeignKey: "",
 		PivotTable: "post_tags", PivotLocalKey: "post_id", PivotForeignKey: "tag_id",
 	}, func(ctx context.Context, db query.DB, rows []*Post) error {
@@ -126,7 +126,7 @@ func init() {
 	})
 
 	query.RegisterRelation(query.Relation{
-		Name: "user", Kind: query.RelationBelongsTo, Table: "users",
+		Name: "user", Kind: query.RelationBelongsTo, Table: "users", Field: "User",
 		LocalKey: "user_id", ForeignKey: "id",
 	}, func(ctx context.Context, db query.DB, rows []*Profile) error {
 		return query.LoadBelongsTo(ctx, db, rows, query.BelongsTo[Profile, User]{
@@ -139,7 +139,7 @@ func init() {
 	})
 
 	query.RegisterRelation(query.Relation{
-		Name: "posts", Kind: query.RelationBelongsToMany, Table: "posts",
+		Name: "posts", Kind: query.RelationBelongsToMany, Table: "posts", Field: "Posts",
 		LocalKey: "id", ForeignKey: "",
 		PivotTable: "post_tags", PivotLocalKey: "tag_id", PivotForeignKey: "post_id",
 	}, func(ctx context.Context, db query.DB, rows []*Tag) error {
@@ -156,7 +156,7 @@ func init() {
 	})
 
 	query.RegisterRelation(query.Relation{
-		Name: "post", Kind: query.RelationBelongsTo, Table: "posts",
+		Name: "post", Kind: query.RelationBelongsTo, Table: "posts", Field: "Post",
 		LocalKey: "post_id", ForeignKey: "id",
 	}, func(ctx context.Context, db query.DB, rows []*PostTag) error {
 		return query.LoadBelongsTo(ctx, db, rows, query.BelongsTo[PostTag, Post]{
@@ -169,7 +169,7 @@ func init() {
 	})
 
 	query.RegisterRelation(query.Relation{
-		Name: "tag", Kind: query.RelationBelongsTo, Table: "tags",
+		Name: "tag", Kind: query.RelationBelongsTo, Table: "tags", Field: "Tag",
 		LocalKey: "tag_id", ForeignKey: "id",
 	}, func(ctx context.Context, db query.DB, rows []*PostTag) error {
 		return query.LoadBelongsTo(ctx, db, rows, query.BelongsTo[PostTag, Tag]{
@@ -181,4 +181,54 @@ func init() {
 		})
 	})
 
+}
+
+// TagsRelation is the belongs-to-many association (Attach/Detach/Sync/Toggle).
+// The eager-load field is named Tags; Go cannot share that identifier with a method.
+func (m *Post) TagsRelation() query.BelongsToManyAssoc {
+	return query.BelongsToManyAssoc{
+		PivotTable: "post_tags", PivotParentKey: "post_id", PivotRelatedKey: "tag_id",
+		ParentID: m.ID, Timestamps: true,
+	}
+}
+
+func (m *Post) AttachTags(ctx context.Context, db query.DB, ids ...any) error {
+	return m.TagsRelation().Attach(ctx, db, ids...)
+}
+
+func (m *Post) DetachTags(ctx context.Context, db query.DB, ids ...any) error {
+	return m.TagsRelation().Detach(ctx, db, ids...)
+}
+
+func (m *Post) SyncTags(ctx context.Context, db query.DB, ids ...any) error {
+	return m.TagsRelation().Sync(ctx, db, ids...)
+}
+
+func (m *Post) ToggleTags(ctx context.Context, db query.DB, ids ...any) error {
+	return m.TagsRelation().Toggle(ctx, db, ids...)
+}
+
+// PostsRelation is the belongs-to-many association (Attach/Detach/Sync/Toggle).
+// The eager-load field is named Posts; Go cannot share that identifier with a method.
+func (m *Tag) PostsRelation() query.BelongsToManyAssoc {
+	return query.BelongsToManyAssoc{
+		PivotTable: "post_tags", PivotParentKey: "tag_id", PivotRelatedKey: "post_id",
+		ParentID: m.ID, Timestamps: true,
+	}
+}
+
+func (m *Tag) AttachPosts(ctx context.Context, db query.DB, ids ...any) error {
+	return m.PostsRelation().Attach(ctx, db, ids...)
+}
+
+func (m *Tag) DetachPosts(ctx context.Context, db query.DB, ids ...any) error {
+	return m.PostsRelation().Detach(ctx, db, ids...)
+}
+
+func (m *Tag) SyncPosts(ctx context.Context, db query.DB, ids ...any) error {
+	return m.PostsRelation().Sync(ctx, db, ids...)
+}
+
+func (m *Tag) TogglePosts(ctx context.Context, db query.DB, ids ...any) error {
+	return m.PostsRelation().Toggle(ctx, db, ids...)
 }

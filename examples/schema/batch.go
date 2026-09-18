@@ -5,7 +5,7 @@ import (
 	"github.com/vorzela/vorm/schema"
 )
 
-// MigrateBlogSchema creates related tables with one vm migrate at the end.
+// MigrateBlogSchema creates related tables with one migrate at the end.
 // Still one Schema.Create per table — not flag-based CLI scaffolds.
 func MigrateBlogSchema() error {
 	return vorm.Schema.Batch(func(s *schema.Facade) error {

@@ -9,8 +9,7 @@ import (
 )
 
 // The prerequisite files are declarative: a commented-out CREATE line means the
-// object is disabled, an uncommented one means it is wanted. That is the same
-// contract vm uses, so the files are interchangeable between the two tools.
+// object is disabled, an uncommented one means it is wanted.
 const (
 	ExtensionsFile = "extensions.sql"
 	FunctionsFile  = "functions.sql"

@@ -11,18 +11,24 @@ import (
 )
 
 // prereqFile pairs a prerequisite SQL file with the sidecar file caching its
-// hash. vm keeps these sidecars next to the SQL so unchanged prerequisites are
-// not re-applied on every run.
+// hash. Sidecars sit next to the SQL so unchanged prerequisites are not
+// re-applied on every run.
 type prereqFile struct {
 	sql      string
 	hashFile string
 }
 
+const (
+	ExtensionsHashFile = ".vorm_extensions_hash"
+	FunctionsHashFile  = ".vorm_functions_hash"
+	EnumsHashFile      = ".vorm_enums_hash"
+)
+
 // prereqFiles is ordered: functions and enums may depend on extensions.
 var prereqFiles = []prereqFile{
-	{"extensions.sql", ".vm_extensions_hash"},
-	{"functions.sql", ".vm_functions_hash"},
-	{"enums.sql", ".vm_enums_hash"},
+	{"extensions.sql", ExtensionsHashFile},
+	{"functions.sql", FunctionsHashFile},
+	{"enums.sql", EnumsHashFile},
 }
 
 // PrereqStatements turns a prerequisite file into statements that are safe to

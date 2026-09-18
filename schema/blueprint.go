@@ -34,6 +34,14 @@ func NewBlueprint(table string) *Blueprint {
 	return &Blueprint{table: table}
 }
 
+// NewAlterBlueprint starts an ALTER TABLE definition.
+func NewAlterBlueprint(table string) *Blueprint {
+	return &Blueprint{table: table, alter: true}
+}
+
+// TableName is the table this blueprint describes.
+func (b *Blueprint) TableName() string { return b.table }
+
 // ID adds a bigserial / bigint auto-increment primary key named id.
 func (b *Blueprint) ID() *Column {
 	return b.add(newColumn("id").primary().autoIncrement())

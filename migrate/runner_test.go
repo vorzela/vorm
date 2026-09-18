@@ -13,7 +13,7 @@ import (
 	"github.com/vorzela/vorm/query"
 )
 
-// upDown builds a migration file in the layout vm scaffolds.
+// upDown builds a migration file in the layout vorm scaffolds.
 func upDown(up, down string) string {
 	return "-- ⬆ Up (Run when migrating forward)\n" + up + "\n\n-- ⬇ Down (Run when rolling back)\n" + down + "\n"
 }

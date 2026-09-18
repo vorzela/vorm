@@ -34,7 +34,7 @@ const DefaultSchemaName = "public"
 // fkNoAction is the SQL default referential action.
 const fkNoAction = "NO ACTION"
 
-// defaultExcludedTables are the vm/vorm migration bookkeeping tables. They are
+// defaultExcludedTables are the vorm migration bookkeeping tables. They are
 // dropped from Schema.Tables unless the caller names them in IncludeTables.
 var defaultExcludedTables = []string{"migrations", "migrations_lock"}
 

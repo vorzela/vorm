@@ -1,41 +1,44 @@
 # Migrations
 
-vorm applies migrations itself, in the process that calls it. The file format,
-the `migrations` tracking table, checksums, batch numbers and locks match the
-Vorzela Migrate (`vm`) CLI, so the same directory works with either tool.
+vorm applies migrations itself, in the process that calls it.
 
 ```bash
 export DATABASE_URL=postgres://user:pass@localhost:5432/app?sslmode=disable
 vorm migrate
 ```
 
-Set `RUNNER=vm` in `.vorm` to shell out to the `vm` binary instead
-(`vorm ensure-vm` installs it). Nothing else in vorm depends on it.
-
 ## File format
 
-One file per migration, named `<unix_timestamp>_<snake_case>.sql`, holding both
-directions:
+One file per migration, named `<unix_timestamp>_<snake_case>.go`, with `Up` and
+`Down` that call the Schema facade. The runner compiles that AST to SQL — it
+never executes the functions (that would write extra files and AutoMigrate).
 
-```sql
--- ⬆ Up (Run when migrating forward)
-CREATE TABLE posts (
-    id BIGSERIAL PRIMARY KEY,
-    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at TIMESTAMPTZ
-);
+```go
+//go:build ignore
 
--- ⬇ Down (Run when rolling back)
-DROP TABLE IF EXISTS posts;
+package migrations
+
+import "github.com/vorzela/vorm/schema"
+
+func Up(s *schema.Facade) {
+	s.Create("posts", func(t *schema.Blueprint) {
+		t.ID()
+		t.String("title")
+		t.ForeignId("user_id").Constrained("users").CascadeOnDelete()
+		t.Timestamps()
+	})
+}
+
+func Down(s *schema.Facade) {
+	s.DropIfExists("posts")
+}
 ```
 
-Files without a numeric prefix are ignored by the sequence, which is what keeps
-`extensions.sql`, `enums.sql` and `functions.sql` out of it.
-
-Scaffold one with `vorm make migration posts`; it also writes a matching model
-placeholder and query stub.
+`vorm make migration posts` writes that file. `vorm make migration post_tag`
+writes `s.BelongsToMany("posts", "tags")`. Numbered `*.sql` files with Up/Down
+markers still apply (legacy). Files without a numeric prefix are ignored, which
+is what keeps `extensions.sql`, `enums.sql` and `functions.sql` out of the
+sequence.
 
 ## Commands
 
@@ -76,14 +79,21 @@ unreleased, then rebuilding with `vorm fresh --force`. Long `add_*` / `alter_*`
 chains are worth it only once the migration has been applied somewhere you
 cannot reset.
 
-Once a table exists in an environment you cannot drop, write the alter:
+Once a table exists in an environment you cannot drop, write the alter
+(`vorm make migration add_phone_to_users`):
 
-```sql
--- ⬆ Up (Run when migrating forward)
-ALTER TABLE users ADD COLUMN phone VARCHAR(32);
+```go
+func Up(s *schema.Facade) {
+	s.Table("users", func(t *schema.Blueprint) {
+		t.String("phone", 32)
+	})
+}
 
--- ⬇ Down (Run when rolling back)
-ALTER TABLE users DROP COLUMN phone;
+func Down(s *schema.Facade) {
+	s.Table("users", func(t *schema.Blueprint) {
+		t.DropColumn("phone")
+	})
+}
 ```
 
 Then `vorm generate` to pick the column up in the models.
@@ -93,7 +103,7 @@ Then `vorm generate` to pick the column up in the models.
 `extensions.sql`, `enums.sql` and `functions.sql` live next to the migrations and
 are declarative: an uncommented `CREATE` line is enabled, a commented one is
 disabled. They are applied before the migrations, and only when their contents
-changed since the last run (tracked in `.vm_*_hash` sidecars).
+changed since the last run (tracked in `.vorm_*_hash` sidecars).
 
 ```bash
 vorm extensions             # sync migrations/extensions.sql

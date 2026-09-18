@@ -8,8 +8,7 @@ import (
 )
 
 const (
-	// pgLockKey is the advisory lock key vm uses, a hash of "vorzela-migrate".
-	// Both tools must agree on it to lock each other out.
+	// pgLockKey is the advisory lock key for vorm migrations.
 	pgLockKey = 1986324789
 
 	mysqlLockName = "vorzela_migrate_lock"

@@ -1,7 +1,7 @@
 // Package vorm is Vorzela's Laravel-inspired, codegen-first data layer (Go).
 //
 // Design:
-//   - Schema builder writes migrations and drives `vm` in the background.
+//   - Schema builder writes migrations and applies them in-process.
 //   - Hybrid // vorm:query stubs; `vorm generate` emits SQL + typed funcs under
 //     vorm/gen (pgx v5 or lib/pq for Postgres; MySQL/MariaDB via OpenMySQL).
 //   - models/ are generated only (DO NOT EDIT); column existence + type checks.

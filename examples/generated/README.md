@@ -8,4 +8,5 @@
 ```go
 rows, err := gen.ListActiveAdults(ctx, db) // []ListActiveAdultsRow
 u, err := gen.GetUserByEmail(ctx, db, gen.GetUserByEmailParams{Email: "a@b.c"})
+u, err := gen.UserByID(ctx, db, gen.UserByIDParams{Id: 42})
 ```

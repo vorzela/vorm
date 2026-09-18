@@ -215,11 +215,14 @@ func renderModel(opts SchemaOptions, mapper *TypeMapper, t introspect.Table, rel
 	if opts.EmitRelations && len(rels) > 0 {
 		fieldDecls.WriteString("\n\t// Relations — populated by .With(...); never selected or written.\n")
 		for _, r := range rels {
-			goType := ModelName(r.RelatedTable)
-			if r.Kind == query.RelationHasMany || r.Kind == query.RelationBelongsToMany {
-				goType = "[]" + goType
-			} else {
-				goType = "*" + goType
+			var goType string
+			switch r.Kind {
+			case query.RelationMorphTo:
+				goType = "any"
+			case query.RelationHasMany, query.RelationBelongsToMany, query.RelationMorphMany:
+				goType = "[]" + ModelName(r.RelatedTable)
+			default:
+				goType = "*" + ModelName(r.RelatedTable)
 			}
 			fmt.Fprintf(&fieldDecls, "\t%s %s `json:\"%s,omitempty\" db:\"-\"`\n", r.Field, goType, r.Name)
 		}

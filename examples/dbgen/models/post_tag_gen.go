@@ -14,6 +14,7 @@ type PostTag struct {
 	ID        int64     `json:"id" db:"id"`
 	PostID    int64     `json:"post_id" db:"post_id"`
 	TagID     int64     `json:"tag_id" db:"tag_id"`
+	Pinned    bool      `json:"pinned" db:"pinned"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 
 	// Relations — populated by .With(...); never selected or written.
@@ -29,16 +30,18 @@ var PostTagColumns = struct {
 	ID        string
 	PostID    string
 	TagID     string
+	Pinned    string
 	CreatedAt string
 }{
 	ID:        "id",
 	PostID:    "post_id",
 	TagID:     "tag_id",
+	Pinned:    "pinned",
 	CreatedAt: "created_at",
 }
 
 // PostTagColumnList is the explicit projection vorm selects; wildcards are never emitted.
-var PostTagColumnList = []string{"id", "post_id", "tag_id", "created_at"}
+var PostTagColumnList = []string{"id", "post_id", "tag_id", "pinned", "created_at"}
 
 // PostTags is the typed query entrypoint for "post_tags".
 var PostTags = query.Model[PostTag](query.Meta{

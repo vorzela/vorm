@@ -14,9 +14,9 @@
 ## Workflow
 
 ```bash
-vorm make migration posts   # migration + model stub + query stub
-# edit migrations/<ts>_create_posts_table.sql
-vorm migrate                # lint, lock, apply, checksum
+vorm make migration posts   # timestamped Blueprint Go in migrations/
+# edit migrations/<ts>_create_posts_table.go
+vorm migrate                # compile Blueprint, lint, lock, apply, checksum
 vorm generate               # models from the DB, then typed queries
 ```
 
@@ -28,7 +28,7 @@ shows what vorm sees in the database.
 `Where` (incl. operator helpers), `WhereIn` / `WhereNotIn`, `WhereNull` /
 `WhereNotNull`, `WhereSearch`, `WhereRaw`, `OrWhere`, `Join` / `LeftJoin`,
 `GroupBy`, `Having`, `OrderBy`, `Limit`, `Offset`, `Distinct`, `WithTrashed`,
-locks, and the terminals `Get`, `First`, `FirstOrFail`, `Count`, `Exists`,
+locks, and the terminals `Get`, `First`, `FirstOrFail`, `FindByID`, `Count`, `Exists`,
 `Paginate`, `Create`, `Update`, `Delete`, `SoftDelete`, `ForceDelete`, `Restore`.
 
 Anything else is reported as pending with a reason and keeps running through the
@@ -58,7 +58,7 @@ query.Classify(err)   // query.Kind
 
 `.vorm`, `KEY=value`. `DATABASE_URL` from the environment always wins.
 
-Keys: `PACKAGE`, `OUT_DIR`, `DRIVER`, `DIALECT`, `RUNNER`, `MIGRATION_PATH`,
+Keys: `PACKAGE`, `OUT_DIR`, `DRIVER`, `DIALECT`, `MIGRATION_PATH`,
 `MODEL_SOURCE`, `MODEL_DIR`, `MODEL_PACKAGE`, `MODEL_IMPORT`, `QUERY_DIR`,
 `SCHEMA_DIR`, `SCHEMA_NAME`, `EMIT_RELATIONS`, `EMIT_FUNCTIONS`.
 
@@ -79,4 +79,3 @@ versioned in a specific migration.
 - `Where("actve", …)` — fails the column check
 - `Where("active", "yes")` on a bool column — fails the type check
 - Adding a column in SQL and not rerunning `vorm generate`
-- Reaching for the `vm` binary; `RUNNER=native` is the default and needs nothing installed
