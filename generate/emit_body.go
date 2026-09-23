@@ -181,8 +181,19 @@ func emitCountBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dialec
 	return nil
 }
 
-// emitPaginateBody runs the page query plus a COUNT over the same predicate.
+// emitPaginateBody runs offset, simple, or cursor pagination.
 func emitPaginateBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dialect, hasParams bool) error {
+	switch st.PageStyle {
+	case "simple":
+		return emitSimplePaginateBody(b, st, ms, d, hasParams)
+	case "cursor":
+		return emitCursorPaginateBody(b, st, ms, d, hasParams)
+	default:
+		return emitOffsetPaginateBody(b, st, ms, d, hasParams)
+	}
+}
+
+func emitOffsetPaginateBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dialect, hasParams bool) error {
 	bind := binder(st, hasParams)
 	page, perPage := "1", "15"
 	if st.PageExpr != "" {
@@ -211,12 +222,9 @@ func emitPaginateBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dia
 	}
 	s := emitStatement(b, constSQLName(st.Name), "", p, d)
 	fmt.Fprintf(b, "\trows, err := db.QueryContext(%s)\n", s.call())
-	b.WriteString("\tif err != nil {\n\t\treturn nil, err\n\t}\n\tdefer rows.Close()\n")
-	fmt.Fprintf(b, "\tout := make([]%s, 0, perPage)\n", rowT)
-	b.WriteString("\tfor rows.Next() {\n")
-	fmt.Fprintf(b, "\t\trow, err := scan%s(rows)\n", rowT)
-	b.WriteString("\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t\tout = append(out, row)\n\t}\n")
-	b.WriteString("\tif err := rows.Err(); err != nil {\n\t\treturn nil, err\n\t}\n")
+	if err := emitPageScan(b, rowT, "perPage"); err != nil {
+		return err
+	}
 	// Release the connection before the COUNT so both work on a single conn.
 	b.WriteString("\trows.Close()\n")
 
@@ -244,6 +252,212 @@ func emitPaginateBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dia
 	b.WriteString("\t\tTotal:    &total,\n")
 	b.WriteString("\t\tHasMore:  page < pages,\n")
 	b.WriteString("\t}, nil\n")
+	return nil
+}
+
+func emitSimplePaginateBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dialect, hasParams bool) error {
+	bind := binder(st, hasParams)
+	page, perPage := "1", "15"
+	if st.PageExpr != "" {
+		page = bind(st.PageExpr)
+	}
+	if st.PerPageExpr != "" {
+		perPage = bind(st.PerPageExpr)
+	}
+
+	fmt.Fprintf(b, "\tperPage := %s\n", perPage)
+	b.WriteString("\tif perPage <= 0 {\n\t\tperPage = 15\n\t}\n")
+	fmt.Fprintf(b, "\tpage := %s\n", page)
+	b.WriteString("\tif page <= 0 {\n\t\tpage = 1\n\t}\n")
+	b.WriteString("\tlimitN := perPage + 1\n")
+
+	pageStub := st
+	pageStub.Limit, pageStub.Offset = 0, 0
+	pageStub.LimitExpr, pageStub.OffsetExpr = "limitN", "(page-1)*perPage"
+	localBind := passthroughBinder(bind, "perPage", "limitN", "(page-1)*perPage")
+
+	rowT := rowTypeName(st.Name)
+	pl := newPlanner(pageStub, ms, d, localBind)
+	p, err := pl.selectPlan(resultCols(st, ms), selectRows)
+	if err != nil {
+		return err
+	}
+	s := emitStatement(b, constSQLName(st.Name), "", p, d)
+	fmt.Fprintf(b, "\trows, err := db.QueryContext(%s)\n", s.call())
+	if err := emitPageScan(b, rowT, "limitN"); err != nil {
+		return err
+	}
+	b.WriteString("\thasMore := len(out) > perPage\n")
+	b.WriteString("\tif hasMore {\n\t\tout = out[:perPage]\n\t}\n")
+	fmt.Fprintf(b, "\treturn &query.PageResult[%s]{\n", rowT)
+	b.WriteString("\t\tData:    out,\n")
+	b.WriteString("\t\tStyle:   string(query.PageSimple),\n")
+	b.WriteString("\t\tPerPage: perPage,\n")
+	b.WriteString("\t\tPage:    page,\n")
+	b.WriteString("\t\tHasMore: hasMore,\n")
+	b.WriteString("\t}, nil\n")
+	return nil
+}
+
+func emitCursorPaginateBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dialect, hasParams bool) error {
+	bind := binder(st, hasParams)
+	perPage := "15"
+	if st.PerPageExpr != "" {
+		perPage = bind(st.PerPageExpr)
+	}
+	col := st.CursorCol
+	if col == "" && len(st.Orders) > 0 {
+		col = st.Orders[0].Col
+	}
+	if col == "" {
+		col = ms.PrimaryKey
+	}
+	if col == "" {
+		col = "id"
+	}
+	desc := st.CursorDesc
+	if !desc && len(st.Orders) > 0 && strings.EqualFold(st.Orders[0].Dir, "DESC") {
+		desc = true
+	}
+	dir := "ASC"
+	op := ">"
+	if desc {
+		dir = "DESC"
+		op = "<"
+	}
+
+	fmt.Fprintf(b, "\tperPage := %s\n", perPage)
+	b.WriteString("\tif perPage <= 0 {\n\t\tperPage = 15\n\t}\n")
+	b.WriteString("\tlimitN := perPage + 1\n")
+
+	hasCursor := st.CursorExpr != ""
+	if hasCursor {
+		fmt.Fprintf(b, "\tcursor := %s\n", bind(st.CursorExpr))
+		b.WriteString("\tvar cursorVal any\n")
+		b.WriteString("\tif cursor != \"\" {\n")
+		b.WriteString("\t\tvar err error\n")
+		b.WriteString("\t\tcursorVal, err = query.DecodeCursor(cursor)\n")
+		b.WriteString("\t\tif err != nil {\n")
+		b.WriteString("\t\t\treturn nil, fmt.Errorf(\"vorm/query: invalid cursor: %w\", err)\n")
+		b.WriteString("\t\t}\n")
+		b.WriteString("\t}\n")
+	}
+
+	pageStub := st
+	pageStub.Limit, pageStub.Offset = 0, 0
+	pageStub.LimitExpr, pageStub.OffsetExpr = "limitN", ""
+	pageStub.Orders = []OrderSpec{{Col: col, Dir: dir}}
+	locals := []string{"perPage", "limitN"}
+	if hasCursor {
+		locals = append(locals, "cursorVal")
+	}
+	localBind := passthroughBinder(bind, locals...)
+
+	rowT := rowTypeName(st.Name)
+	p, err := newPlanner(pageStub, ms, d, localBind).selectPlan(resultCols(st, ms), selectRows)
+	if err != nil {
+		return err
+	}
+	first := emitStatement(b, constSQLName(st.Name), "", p, d)
+
+	if hasCursor {
+		afterStub := pageStub
+		afterStub.Wheres = append(append([]WhereSpec(nil), st.Wheres...), WhereSpec{Col: col, Op: op, ArgExpr: "cursorVal"})
+		ap, err := newPlanner(afterStub, ms, d, localBind).selectPlan(resultCols(st, ms), selectRows)
+		if err != nil {
+			return err
+		}
+		after := emitStatement(b, constSQLName(st.Name)+"After", "after", ap, d)
+		b.WriteString("\tvar rows query.Rows\n")
+		b.WriteString("\tvar err error\n")
+		b.WriteString("\tif cursor == \"\" {\n")
+		fmt.Fprintf(b, "\t\trows, err = db.QueryContext(%s)\n", first.call())
+		b.WriteString("\t} else {\n")
+		fmt.Fprintf(b, "\t\trows, err = db.QueryContext(%s)\n", after.call())
+		b.WriteString("\t}\n")
+	} else {
+		fmt.Fprintf(b, "\trows, err := db.QueryContext(%s)\n", first.call())
+	}
+	if err := emitPageScan(b, rowT, "limitN"); err != nil {
+		return err
+	}
+	b.WriteString("\thasMore := len(out) > perPage\n")
+	b.WriteString("\tif hasMore {\n\t\tout = out[:perPage]\n\t}\n")
+	b.WriteString("\tvar next string\n")
+	fmt.Fprintf(b, "\tif hasMore && len(out) > 0 {\n\t\tif val := query.CursorValue(out[len(out)-1], %q); val != nil {\n\t\t\tnext = query.EncodeCursor(val)\n\t\t}\n\t}\n", col)
+	fmt.Fprintf(b, "\treturn &query.PageResult[%s]{\n", rowT)
+	b.WriteString("\t\tData:       out,\n")
+	b.WriteString("\t\tStyle:      string(query.PageCursor),\n")
+	b.WriteString("\t\tPerPage:    perPage,\n")
+	b.WriteString("\t\tNextCursor: next,\n")
+	b.WriteString("\t\tHasMore:    hasMore,\n")
+	b.WriteString("\t}, nil\n")
+	return nil
+}
+
+func emitPageScan(b *strings.Builder, rowT, capExpr string) error {
+	b.WriteString("\tif err != nil {\n\t\treturn nil, err\n\t}\n\tdefer rows.Close()\n")
+	fmt.Fprintf(b, "\tout := make([]%s, 0, %s)\n", rowT, capExpr)
+	b.WriteString("\tfor rows.Next() {\n")
+	fmt.Fprintf(b, "\t\trow, err := scan%s(rows)\n", rowT)
+	b.WriteString("\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t\tout = append(out, row)\n\t}\n")
+	b.WriteString("\tif err := rows.Err(); err != nil {\n\t\treturn nil, err\n\t}\n")
+	return nil
+}
+
+func emitPluckBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dialect, hasParams bool) error {
+	if len(st.Selects) == 0 {
+		return fmt.Errorf("Pluck needs a column")
+	}
+	pl := newPlanner(st, ms, d, binder(st, hasParams))
+	p, err := pl.selectPlan(st.Selects, selectRows)
+	if err != nil {
+		return err
+	}
+	s := emitStatement(b, constSQLName(st.Name), "", p, d)
+	fmt.Fprintf(b, "\trows, err := db.QueryContext(%s)\n", s.call())
+	b.WriteString("\tif err != nil {\n\t\treturn nil, err\n\t}\n\tdefer rows.Close()\n")
+	b.WriteString("\tvar out []any\n")
+	b.WriteString("\tfor rows.Next() {\n")
+	b.WriteString("\t\tvar v any\n")
+	b.WriteString("\t\tif err := rows.Scan(&v); err != nil {\n\t\t\treturn nil, err\n\t\t}\n")
+	b.WriteString("\t\tout = append(out, v)\n\t}\n")
+	b.WriteString("\tif err := rows.Err(); err != nil {\n\t\treturn nil, err\n\t}\n")
+	b.WriteString("\treturn out, nil\n")
+	return nil
+}
+
+func emitAggregateBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dialect, hasParams bool) error {
+	if len(st.Selects) == 0 {
+		return fmt.Errorf("%s needs a column", st.Action)
+	}
+	pl := newPlanner(st, ms, d, binder(st, hasParams))
+	p, err := pl.aggregatePlan(st.Action, st.Selects[0])
+	if err != nil {
+		return err
+	}
+	s := emitStatement(b, constSQLName(st.Name), "", p, d)
+	b.WriteString("\tvar n sql.NullFloat64\n")
+	fmt.Fprintf(b, "\tif err := db.QueryRowContext(%s).Scan(&n); err != nil {\n\t\treturn 0, err\n\t}\n", s.call())
+	b.WriteString("\tif !n.Valid {\n\t\treturn 0, nil\n\t}\n")
+	b.WriteString("\treturn n.Float64, nil\n")
+	return nil
+}
+
+func emitIncrementBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dialect, hasParams bool) error {
+	if len(st.Selects) == 0 {
+		return fmt.Errorf("%s needs a column", st.Action)
+	}
+	amount := st.AmountExpr
+	if amount == "" {
+		amount = "int64(1)"
+	}
+	pl := newPlanner(st, ms, d, binder(st, hasParams))
+	p, err := pl.incrementPlan(st.Selects[0], amount, st.Action == "Decrement")
+	if err != nil {
+		return err
+	}
+	emitAffectedBody(b, emitStatement(b, constSQLName(st.Name), "", p, d))
 	return nil
 }
 

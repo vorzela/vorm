@@ -3,7 +3,8 @@
 | Sample | Maps to |
 |--------|---------|
 | `models/*.go` | `./models/` — **DO NOT EDIT** |
-| `vorm/gen/queries_gen.go` | sqlc-style `*Row` / `*Params` + SQL |
+| `vorm/gen/db.go` | dialect/driver constants |
+| `vorm/gen/{source}.sql.go` | sqlc-style `*Row` / `*Params` + SQL, one file per stub source |
 
 ```go
 rows, err := gen.ListActiveAdults(ctx, db) // []ListActiveAdultsRow

@@ -3,6 +3,7 @@ package query
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -14,8 +15,13 @@ type BelongsToManyAssoc struct {
 	PivotParentKey  string
 	PivotRelatedKey string
 	ParentID        any
-	Timestamps      bool
+	CreatedAt       bool // INSERT CURRENT_TIMESTAMP when the pivot has created_at
+	UpdatedAt       bool // INSERT CURRENT_TIMESTAMP when the pivot has updated_at
+	Timestamps      bool // shorthand for CreatedAt+UpdatedAt
+	UniquePair      bool // emit ON CONFLICT / INSERT IGNORE only when those two FKs are unique
 	Dialect         Dialect
+	MorphType       string
+	MorphTypeColumn string
 }
 
 func (a BelongsToManyAssoc) dialect() Dialect {
@@ -74,6 +80,15 @@ func (a BelongsToManyAssoc) attachRows(ctx context.Context, db DB, ids []any, ex
 	}
 
 	cols := []string{parentCol, relatedCol}
+	var typeCol string
+	if a.MorphTypeColumn != "" && a.MorphType != "" {
+		q, err := QuoteIdent(d, a.MorphTypeColumn)
+		if err != nil {
+			return err
+		}
+		typeCol = q
+		cols = append(cols, typeCol)
+	}
 	extraKeys := sortedExtraKeys(extra)
 	for _, k := range extraKeys {
 		q, err := QuoteIdent(d, k)
@@ -82,16 +97,19 @@ func (a BelongsToManyAssoc) attachRows(ctx context.Context, db DB, ids []any, ex
 		}
 		cols = append(cols, q)
 	}
-	if a.Timestamps {
+	if a.createdAt() {
 		created, err := QuoteIdent(d, "created_at")
 		if err != nil {
 			return err
 		}
+		cols = append(cols, created)
+	}
+	if a.updatedAt() {
 		updated, err := QuoteIdent(d, "updated_at")
 		if err != nil {
 			return err
 		}
-		cols = append(cols, created, updated)
+		cols = append(cols, updated)
 	}
 
 	var (
@@ -102,21 +120,30 @@ func (a BelongsToManyAssoc) attachRows(ctx context.Context, db DB, ids []any, ex
 		row := make([]string, 0, len(cols))
 		args = append(args, a.ParentID, id)
 		row = append(row, a.nextPlaceholder(d, len(args)-1), a.nextPlaceholder(d, len(args)))
+		if typeCol != "" {
+			args = append(args, a.MorphType)
+			row = append(row, a.nextPlaceholder(d, len(args)))
+		}
 		for _, k := range extraKeys {
 			args = append(args, extra[k])
 			row = append(row, a.nextPlaceholder(d, len(args)))
 		}
-		if a.Timestamps {
-			row = append(row, "CURRENT_TIMESTAMP", "CURRENT_TIMESTAMP")
+		if a.createdAt() {
+			row = append(row, "CURRENT_TIMESTAMP")
+		}
+		if a.updatedAt() {
+			row = append(row, "CURRENT_TIMESTAMP")
 		}
 		placeholders = append(placeholders, "("+strings.Join(row, ", ")+")")
 	}
 
 	sqlText := fmt.Sprintf("INSERT INTO %s (%s) VALUES %s", table, strings.Join(cols, ", "), strings.Join(placeholders, ", "))
-	if d == DialectMySQL {
-		sqlText = "INSERT IGNORE " + strings.TrimPrefix(sqlText, "INSERT ")
-	} else {
-		sqlText += fmt.Sprintf(" ON CONFLICT (%s, %s) DO NOTHING", parentCol, relatedCol)
+	if a.UniquePair {
+		if d == DialectMySQL {
+			sqlText = "INSERT IGNORE " + strings.TrimPrefix(sqlText, "INSERT ")
+		} else {
+			sqlText += fmt.Sprintf(" ON CONFLICT (%s, %s) DO NOTHING", parentCol, relatedCol)
+		}
 	}
 
 	obs := observe(ctx, "insert", a.PivotTable, sqlText, args)
@@ -155,11 +182,25 @@ func (a BelongsToManyAssoc) Detach(ctx context.Context, db DB, ids ...any) error
 
 	args := []any{a.ParentID}
 	sqlText := fmt.Sprintf("DELETE FROM %s WHERE %s = %s", table, parentCol, a.nextPlaceholder(d, 1))
+	if a.MorphTypeColumn != "" && a.MorphType != "" {
+		typeQ, err := QuoteIdent(d, a.MorphTypeColumn)
+		if err != nil {
+			return err
+		}
+		args = append(args, a.MorphType)
+		sqlText += fmt.Sprintf(" AND %s = %s", typeQ, a.nextPlaceholder(d, len(args)))
+	}
 	if len(ids) > 0 {
 		holders := make([]string, 0, len(ids))
 		for _, id := range ids {
+			if id == nil {
+				continue
+			}
 			args = append(args, id)
 			holders = append(holders, a.nextPlaceholder(d, len(args)))
+		}
+		if len(holders) == 0 {
+			return nil
 		}
 		sqlText += fmt.Sprintf(" AND %s IN (%s)", relatedCol, strings.Join(holders, ", "))
 	}
@@ -258,6 +299,14 @@ func (a BelongsToManyAssoc) relatedIDs(ctx context.Context, db DB) ([]any, error
 	}
 	sqlText := fmt.Sprintf("SELECT %s FROM %s WHERE %s = %s", relatedCol, table, parentCol, a.nextPlaceholder(d, 1))
 	args := []any{a.ParentID}
+	if a.MorphTypeColumn != "" && a.MorphType != "" {
+		typeQ, err := QuoteIdent(d, a.MorphTypeColumn)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, a.MorphType)
+		sqlText += fmt.Sprintf(" AND %s = %s", typeQ, a.nextPlaceholder(d, len(args)))
+	}
 	obs := observe(ctx, "select", a.PivotTable, sqlText, args)
 	rows, err := db.QueryContext(ctx, sqlText, args...)
 	if err != nil {
@@ -286,6 +335,9 @@ func (a BelongsToManyAssoc) validate() error {
 	return nil
 }
 
+func (a BelongsToManyAssoc) createdAt() bool { return a.Timestamps || a.CreatedAt }
+func (a BelongsToManyAssoc) updatedAt() bool { return a.Timestamps || a.UpdatedAt }
+
 func sortedExtraKeys(extra map[string]any) []string {
 	if len(extra) == 0 {
 		return nil
@@ -294,13 +346,6 @@ func sortedExtraKeys(extra map[string]any) []string {
 	for k := range extra {
 		keys = append(keys, k)
 	}
-	// small n; insertion order is enough if we sort for stable SQL
-	for i := 0; i < len(keys); i++ {
-		for j := i + 1; j < len(keys); j++ {
-			if keys[j] < keys[i] {
-				keys[i], keys[j] = keys[j], keys[i]
-			}
-		}
-	}
+	sort.Strings(keys)
 	return keys
 }

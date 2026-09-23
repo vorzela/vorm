@@ -4,6 +4,7 @@
 package models
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -22,9 +23,16 @@ type Post struct {
 	CreatedAt time.Time       `json:"created_at" db:"created_at"`
 
 	// Relations — populated by .With(...); never selected or written.
-	Author *User `json:"author,omitempty" db:"-"`
-	Editor *User `json:"editor,omitempty" db:"-"`
-	Tags   []Tag `json:"tags,omitempty" db:"-"`
+	Author         *User     `json:"author,omitempty" db:"-"`
+	Comments       []Comment `json:"comments,omitempty" db:"-"`
+	CommentsCount  int64     `json:"comments_count" db:"comments_count"`
+	CommentsExists bool      `json:"comments_exists" db:"comments_exists"`
+	Editor         *User     `json:"editor,omitempty" db:"-"`
+	LatestComment  *Comment  `json:"latest_comment,omitempty" db:"-"`
+	OldestComment  *Comment  `json:"oldest_comment,omitempty" db:"-"`
+	Tags           []Tag     `json:"tags,omitempty" db:"-"`
+	TagsCount      int64     `json:"tags_count" db:"tags_count"`
+	TagsExists     bool      `json:"tags_exists" db:"tags_exists"`
 }
 
 // PostTable is the table name for Post.
@@ -67,4 +75,121 @@ var Posts = query.Model[Post](query.Meta{
 var PostIndexes = []query.IndexInfo{
 	{Name: "posts_pkey", Columns: []string{"id"}, Unique: true, Primary: true, Method: "btree"},
 	{Name: "posts_author_id_idx", Columns: []string{"author_id"}, Unique: false, Primary: false, Method: "btree"},
+}
+
+// Relations are registered on package init so .With("name") resolves without
+// extra wiring. Every loader batches the whole result set into a bounded
+// number of queries — there is no per-row lookup.
+func init() {
+	query.RegisterRelation(query.Relation{
+		Name: "author", Kind: query.RelationBelongsTo, Table: "users", Field: "Author",
+		LocalKey: "author_id", ForeignKey: "id",
+	}, func(ctx context.Context, db query.DB, rows []*Post) error {
+		return query.LoadBelongsTo(ctx, db, rows, query.BelongsTo[Post, User]{
+			Related:   Users,
+			OwnerKey:  "id",
+			ParentKey: func(m *Post) any { return m.AuthorID },
+			ChildKey:  func(r *User) any { return r.ID },
+			Assign:    func(m *Post, r *User) { m.Author = r },
+		})
+	})
+
+	query.RegisterRelation(query.Relation{
+		Name: "comments", Kind: query.RelationHasMany, Table: "comments", Field: "Comments",
+		LocalKey: "id", ForeignKey: "post_id",
+	}, func(ctx context.Context, db query.DB, rows []*Post) error {
+		return query.LoadHasMany(ctx, db, rows, query.HasMany[Post, Comment]{
+			Related:    Comments,
+			ForeignKey: "post_id",
+			ParentKey:  func(m *Post) any { return m.ID },
+			ChildKey:   func(r *Comment) any { return r.PostID },
+			Assign:     func(m *Post, rows []Comment) { m.Comments = rows },
+		})
+	})
+
+	query.RegisterRelation(query.Relation{
+		Name: "editor", Kind: query.RelationBelongsTo, Table: "users", Field: "Editor",
+		LocalKey: "editor_id", ForeignKey: "id",
+	}, func(ctx context.Context, db query.DB, rows []*Post) error {
+		return query.LoadBelongsTo(ctx, db, rows, query.BelongsTo[Post, User]{
+			Related:   Users,
+			OwnerKey:  "id",
+			ParentKey: func(m *Post) any { return m.EditorID },
+			ChildKey:  func(r *User) any { return r.ID },
+			Assign:    func(m *Post, r *User) { m.Editor = r },
+		})
+	})
+
+	query.RegisterRelation(query.Relation{
+		Name: "latest_comment", Kind: query.RelationHasOneOfMany, Table: "comments", Field: "LatestComment",
+		LocalKey: "id", ForeignKey: "post_id",
+	}, func(ctx context.Context, db query.DB, rows []*Post) error {
+		return query.LoadHasOneOfMany(ctx, db, rows, query.HasOneOfMany[Post, Comment]{
+			Related:    Comments,
+			ForeignKey: "post_id",
+			OrderCol:   "created_at",
+			Desc:       true,
+			ParentKey:  func(m *Post) any { return m.ID },
+			ChildKey:   func(r *Comment) any { return r.PostID },
+			Assign:     func(m *Post, r *Comment) { m.LatestComment = r },
+		})
+	})
+
+	query.RegisterRelation(query.Relation{
+		Name: "oldest_comment", Kind: query.RelationHasOneOfMany, Table: "comments", Field: "OldestComment",
+		LocalKey: "id", ForeignKey: "post_id",
+	}, func(ctx context.Context, db query.DB, rows []*Post) error {
+		return query.LoadHasOneOfMany(ctx, db, rows, query.HasOneOfMany[Post, Comment]{
+			Related:    Comments,
+			ForeignKey: "post_id",
+			OrderCol:   "created_at",
+			Desc:       false,
+			ParentKey:  func(m *Post) any { return m.ID },
+			ChildKey:   func(r *Comment) any { return r.PostID },
+			Assign:     func(m *Post, r *Comment) { m.OldestComment = r },
+		})
+	})
+
+	query.RegisterRelation(query.Relation{
+		Name: "tags", Kind: query.RelationBelongsToMany, Table: "tags", Field: "Tags",
+		LocalKey: "id", ForeignKey: "",
+		PivotTable: "post_tags", PivotLocalKey: "post_id", PivotForeignKey: "tag_id",
+	}, func(ctx context.Context, db query.DB, rows []*Post) error {
+		return query.LoadBelongsToMany(ctx, db, rows, query.BelongsToMany[Post, Tag]{
+			Related:         Tags,
+			PivotTable:      "post_tags",
+			PivotParentKey:  "post_id",
+			PivotRelatedKey: "tag_id",
+			RelatedKey:      "id",
+			ParentKey:       func(m *Post) any { return m.ID },
+			ChildKey:        func(r *Tag) any { return r.ID },
+			Assign:          func(m *Post, rows []Tag) { m.Tags = rows },
+		})
+	})
+
+}
+
+// TagsRelation is the belongs-to-many association (Attach/Detach/Sync/Toggle).
+// The eager-load field is named Tags; Go cannot share that identifier with a method.
+func (m *Post) TagsRelation() query.BelongsToManyAssoc {
+	return query.BelongsToManyAssoc{
+		PivotTable: "post_tags", PivotParentKey: "post_id", PivotRelatedKey: "tag_id",
+		ParentID: m.ID, CreatedAt: true, UpdatedAt: false, UniquePair: true,
+	}
+}
+
+func (m *Post) AttachTags(ctx context.Context, db query.DB, ids ...any) error {
+	return m.TagsRelation().Attach(ctx, db, ids...)
+}
+
+func (m *Post) DetachTags(ctx context.Context, db query.DB, ids ...any) error {
+	return m.TagsRelation().Detach(ctx, db, ids...)
+}
+
+func (m *Post) SyncTags(ctx context.Context, db query.DB, ids ...any) error {
+	return m.TagsRelation().Sync(ctx, db, ids...)
+}
+
+func (m *Post) ToggleTags(ctx context.Context, db query.DB, ids ...any) error {
+	return m.TagsRelation().Toggle(ctx, db, ids...)
 }

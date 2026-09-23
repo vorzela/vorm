@@ -169,7 +169,7 @@ func GoFile(path, body string) []Finding {
 			File:       path,
 			Severity:   Error,
 			Message:    err.Error(),
-			Suggestion: "use Blueprint methods vorm compiles (ID, String, ForeignId, BelongsToMany, Morphs, …)",
+			Suggestion: "use Blueprint methods vorm compiles (ID, String, ForeignId, BelongsTo, BelongsToMany, Morphs, MorphToMany, …)",
 		})
 	}
 	return out

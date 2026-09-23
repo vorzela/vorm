@@ -43,7 +43,7 @@ no single binary spanning all of them.
   plan → segments (text | placeholder | IN)       parameterized SQL
            │
            ▼
-  emit → vorm/gen: Row + Params + SQL const (or strings.Builder when dynamic)
+  emit → vorm/gen/db.go + {source}.sql.go: Row + Params + SQL const (or strings.Builder when dynamic)
 ```
 
 A stub that cannot be lowered — options decided at runtime, transaction

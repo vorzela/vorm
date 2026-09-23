@@ -172,7 +172,7 @@ func facadeMethod(call *ast.CallExpr) (string, bool) {
 		return "", false
 	}
 	switch sel.Sel.Name {
-	case "Create", "Table", "DropIfExists", "Drop", "BelongsToMany", "CreateExtension", "CreateEnum", "CreateFunction":
+	case "Create", "Table", "DropIfExists", "Drop", "BelongsToMany", "MorphToMany", "CreateExtension", "CreateEnum", "CreateFunction":
 		return sel.Sel.Name, true
 	}
 	return "", false
@@ -225,6 +225,21 @@ func compileFacadeCall(filename string, call *ast.CallExpr, dialect string) (up,
 			return "", "", fmt.Errorf("schema: %s: BelongsToMany needs right table: %w", filename, err)
 		}
 		bp := NewPivotBlueprint(left, right)
+		if err := ValidateBlueprint(bp); err != nil {
+			return "", "", err
+		}
+		up, down = bp.Compile(dialect)
+		return up, down, nil
+	case "MorphToMany":
+		related, err := stringLiteral(call.Args, 0)
+		if err != nil {
+			return "", "", fmt.Errorf("schema: %s: MorphToMany needs related table: %w", filename, err)
+		}
+		morph, err := stringLiteral(call.Args, 1)
+		if err != nil {
+			return "", "", fmt.Errorf("schema: %s: MorphToMany needs morph name: %w", filename, err)
+		}
+		bp := NewMorphPivotBlueprint(related, morph)
 		if err := ValidateBlueprint(bp); err != nil {
 			return "", "", err
 		}
@@ -352,6 +367,9 @@ func applyBlueprintCall(filename string, bp *Blueprint, call *ast.CallExpr) erro
 		if err := applyColumnMethod(filename, col, step); err != nil {
 			return err
 		}
+	}
+	if col != nil && col.custom && col.name == "" {
+		return fmt.Errorf("schema: %s: CustomType requires .Column(\"name\")", filename)
 	}
 	return nil
 }
@@ -487,6 +505,15 @@ func applyRoot(filename string, bp *Blueprint, root callStep) (*Column, error) {
 		}
 		bp.Morphs(name)
 		return nil, nil
+	case "CustomType":
+		sqlType, err := stringLiteral(root.args, 0)
+		if err != nil {
+			return nil, fmt.Errorf("schema: %s: CustomType needs a SQL type string", filename)
+		}
+		if !sqlTypeRe.MatchString(strings.TrimSpace(sqlType)) {
+			return nil, fmt.Errorf("schema: %s: invalid SQL type %q", filename, sqlType)
+		}
+		return bp.CustomType(sqlType), nil
 	case "Index":
 		cols, err := stringLiterals(root.args)
 		if err != nil || len(cols) == 0 {
@@ -600,6 +627,15 @@ func applyColumnMethod(filename string, col *Column, step callStep) error {
 		return nil
 	case "CascadeOnUpdate":
 		col.CascadeOnUpdate()
+		return nil
+	case "Column":
+		name, err := stringLiteral(step.args, 0)
+		if err != nil {
+			return fmt.Errorf("schema: %s: Column needs a column name", filename)
+		}
+		if err := col.setName(name); err != nil {
+			return fmt.Errorf("schema: %s: %w", filename, err)
+		}
 		return nil
 	default:
 		return fmt.Errorf("schema: %s: unknown column method %s", filename, step.name)

@@ -158,6 +158,11 @@ func (e *Entity[T]) WithTrashed() *Builder[T] {
 	return e.New().WithTrashed()
 }
 
+// OnlyTrashed starts a query of only soft-deleted rows.
+func (e *Entity[T]) OnlyTrashed() *Builder[T] {
+	return e.New().OnlyTrashed()
+}
+
 // Distinct starts a DISTINCT query.
 func (e *Entity[T]) Distinct() *Builder[T] {
 	return e.New().Distinct()
@@ -171,6 +176,46 @@ func (e *Entity[T]) Join(table, on string) *Builder[T] {
 // With starts a query with eager-loaded relations.
 func (e *Entity[T]) With(relations ...string) *Builder[T] {
 	return e.New().With(relations...)
+}
+
+// WhereHas keeps rows that have at least one matching related row.
+func (e *Entity[T]) WhereHas(name string) *Builder[T] {
+	return e.New().WhereHas(name)
+}
+
+// WhereDoesntHave is the inverse of WhereHas.
+func (e *Entity[T]) WhereDoesntHave(name string) *Builder[T] {
+	return e.New().WhereDoesntHave(name)
+}
+
+// WhereRelation is WhereHas plus a predicate on the related table.
+func (e *Entity[T]) WhereRelation(name, col string, args ...any) *Builder[T] {
+	return e.New().WhereRelation(name, col, args...)
+}
+
+// WithCount adds a `{name}_count` subquery column.
+func (e *Entity[T]) WithCount(names ...string) *Builder[T] {
+	return e.New().WithCount(names...)
+}
+
+// WithExists adds a `{name}_exists` subquery column.
+func (e *Entity[T]) WithExists(names ...string) *Builder[T] {
+	return e.New().WithExists(names...)
+}
+
+// WhereRaw adds a fragment whose ? markers are bound arguments.
+func (e *Entity[T]) WhereRaw(fragment string, args ...any) *Builder[T] {
+	return e.New().WhereRaw(fragment, args...)
+}
+
+// WhereFullText filters a tsvector / FULLTEXT column.
+func (e *Entity[T]) WhereFullText(col, q string) *Builder[T] {
+	return e.New().WhereFullText(col, q)
+}
+
+// WhereJsonContains is Postgres `@>` / MySQL JSON_CONTAINS.
+func (e *Entity[T]) WhereJsonContains(col string, value any) *Builder[T] {
+	return e.New().WhereJsonContains(col, value)
 }
 
 // LookupMeta returns registered meta for T, if any.

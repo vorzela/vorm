@@ -2,6 +2,7 @@ package schema
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -108,6 +109,29 @@ func (b *Blueprint) ForeignIDNullable(name string) *Column {
 //	t.BelongsTo("user_id", "users").RestrictOnDelete() // if you need the column back
 func (b *Blueprint) BelongsTo(column, table string) *Column {
 	return b.ForeignID(column).Constrained(table)
+}
+
+// sqlTypeRe accepts a type name, an optional schema qualifier, and one
+// parenthesized modifier list. It rejects anything that could carry extra SQL.
+var sqlTypeRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?(\([0-9A-Za-z_, ]+\))?$`)
+
+// colIdentRe is a single unquoted identifier.
+var colIdentRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// CustomType adds a column whose SQL type is written through unchanged on
+// every dialect. Use it for extension types (PostGIS, citext, ltree) that are
+// not part of the portable column set.
+//
+//	t.CustomType("GEOGRAPHY(POINT, 4326)").Column("location")
+//	t.CustomType("citext").Column("email")
+func (b *Blueprint) CustomType(sqlType string) *Column {
+	sqlType = strings.TrimSpace(sqlType)
+	if !sqlTypeRe.MatchString(sqlType) {
+		panic(fmt.Sprintf("vorm/schema: invalid SQL type %q", sqlType))
+	}
+	c := newColumn("").typ(sqlType).NotNull()
+	c.custom = true
+	return b.add(c)
 }
 
 // Morphs adds {name}_type VARCHAR + {name}_id BIGINT (polymorphic belongs-to).

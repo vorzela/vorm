@@ -4,6 +4,7 @@
 package models
 
 import (
+	"context"
 	"time"
 
 	"github.com/vorzela/vorm/query"
@@ -49,4 +50,43 @@ var PostTags = query.Model[PostTag](query.Meta{
 	Columns:     PostTagColumnList,
 	PrimaryKey:  "id",
 	SoftDeletes: false,
+	Indexes:     PostTagIndexes,
 })
+
+// PostTagIndexes mirrors the indexes that exist on "post_tags".
+var PostTagIndexes = []query.IndexInfo{
+	{Name: "post_tags_pkey", Columns: []string{"id"}, Unique: true, Primary: true, Method: "btree"},
+	{Name: "post_tags_post_id_tag_id_key", Columns: []string{"post_id", "tag_id"}, Unique: true, Primary: false, Method: "btree"},
+}
+
+// Relations are registered on package init so .With("name") resolves without
+// extra wiring. Every loader batches the whole result set into a bounded
+// number of queries — there is no per-row lookup.
+func init() {
+	query.RegisterRelation(query.Relation{
+		Name: "post", Kind: query.RelationBelongsTo, Table: "posts", Field: "Post",
+		LocalKey: "post_id", ForeignKey: "id",
+	}, func(ctx context.Context, db query.DB, rows []*PostTag) error {
+		return query.LoadBelongsTo(ctx, db, rows, query.BelongsTo[PostTag, Post]{
+			Related:   Posts,
+			OwnerKey:  "id",
+			ParentKey: func(m *PostTag) any { return m.PostID },
+			ChildKey:  func(r *Post) any { return r.ID },
+			Assign:    func(m *PostTag, r *Post) { m.Post = r },
+		})
+	})
+
+	query.RegisterRelation(query.Relation{
+		Name: "tag", Kind: query.RelationBelongsTo, Table: "tags", Field: "Tag",
+		LocalKey: "tag_id", ForeignKey: "id",
+	}, func(ctx context.Context, db query.DB, rows []*PostTag) error {
+		return query.LoadBelongsTo(ctx, db, rows, query.BelongsTo[PostTag, Tag]{
+			Related:   Tags,
+			OwnerKey:  "id",
+			ParentKey: func(m *PostTag) any { return m.TagID },
+			ChildKey:  func(r *Tag) any { return r.ID },
+			Assign:    func(m *PostTag, r *Tag) { m.Tag = r },
+		})
+	})
+
+}

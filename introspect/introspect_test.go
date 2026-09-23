@@ -20,7 +20,7 @@ func TestTableFilter(t *testing.T) {
 			name:  "bookkeeping excluded by default",
 			opts:  Options{},
 			allow: []string{"users", "posts"},
-			deny:  []string{"migrations", "migrations_lock"},
+			deny:  []string{"migrations", "migrations_lock", "spatial_ref_sys", "geography_columns", "geometry_columns"},
 		},
 		{
 			name:  "include list restricts everything else",

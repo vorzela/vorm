@@ -130,6 +130,89 @@ func Down(s *schema.Facade) {}
 	}
 }
 
+func TestCompileSourceMorphToMany(t *testing.T) {
+	src := `package migrations
+import "github.com/vorzela/vorm/schema"
+func Up(s *schema.Facade) { s.MorphToMany("tags", "taggable") }
+func Down(s *schema.Facade) { s.DropIfExists("taggables") }
+`
+	got, err := schema.CompileSource("4_taggables.go", src, "postgres")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"CREATE TABLE IF NOT EXISTS taggables",
+		"tag_id BIGINT NOT NULL REFERENCES tags(id) ON DELETE CASCADE",
+		"taggable_type VARCHAR(255) NOT NULL",
+		"taggable_id BIGINT NOT NULL",
+	} {
+		if !strings.Contains(got.UpSQL, want) {
+			t.Errorf("Up missing %q\n%s", want, got.UpSQL)
+		}
+	}
+}
+
+func TestCompileSourceCustomType(t *testing.T) {
+	src := `package migrations
+import "github.com/vorzela/vorm/schema"
+func Up(s *schema.Facade) {
+	s.Create("places", func(t *schema.Blueprint) {
+		t.ID()
+		t.String("name")
+		t.CustomType("GEOGRAPHY(POINT, 4326)").Column("location")
+		t.CustomType("GEOMETRY(POINT, 3857)").Column("shape")
+		t.CustomType("citext").Column("email")
+	})
+}
+func Down(s *schema.Facade) { s.DropIfExists("places") }
+`
+	got, err := schema.CompileSource("places.go", src, "postgres")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"location GEOGRAPHY(POINT, 4326) NOT NULL",
+		"shape GEOMETRY(POINT, 3857) NOT NULL",
+		"email citext NOT NULL",
+	} {
+		if !strings.Contains(got.UpSQL, want) {
+			t.Errorf("Up missing %q\n%s", want, got.UpSQL)
+		}
+	}
+	mysql, err := schema.CompileSource("places.go", src, "mysql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(mysql.UpSQL, "location GEOGRAPHY(POINT, 4326) NOT NULL") {
+		t.Errorf("custom type was rewritten for mysql:\n%s", mysql.UpSQL)
+	}
+}
+
+func TestCompileSourceCustomTypeRejects(t *testing.T) {
+	missing := `package migrations
+import "github.com/vorzela/vorm/schema"
+func Up(s *schema.Facade) {
+	s.Create("places", func(t *schema.Blueprint) {
+		t.CustomType("citext")
+	})
+}
+`
+	if _, err := schema.CompileSource("bad.go", missing, "postgres"); err == nil {
+		t.Fatal("CustomType without Column should fail")
+	}
+	injected := `package migrations
+import "github.com/vorzela/vorm/schema"
+func Up(s *schema.Facade) {
+	s.Create("places", func(t *schema.Blueprint) {
+		t.CustomType("citext; drop table users").Column("email")
+	})
+}
+`
+	if _, err := schema.CompileSource("bad.go", injected, "postgres"); err == nil {
+		t.Fatal("CustomType should reject extra SQL")
+	}
+}
+
 func TestCompileSourceDoesNotExecuteFacade(t *testing.T) {
 	src := `package migrations
 import "github.com/vorzela/vorm/schema"

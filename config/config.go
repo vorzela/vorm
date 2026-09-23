@@ -39,7 +39,7 @@ type Config struct {
 	// Change to avoid conflicts with another package named gen.
 	Package string
 
-	// OutDir is where queries_gen.go is written (default ./vorm/<Package>).
+	// OutDir is where db.go and {source}.sql.go are written (default ./vorm/<Package>).
 	OutDir string
 
 	QueryDir     string
@@ -348,7 +348,7 @@ func Format(c *Config) string {
 	b.WriteString("# Docs: orm/go/README.md\n\n")
 	b.WriteString("# Generated Go package name (default gen). Change if gen conflicts.\n")
 	fmt.Fprintf(&b, "PACKAGE=%s\n\n", c.Package)
-	b.WriteString("# Output directory for queries_gen.go\n")
+	b.WriteString("# Output directory for db.go and {source}.sql.go\n")
 	fmt.Fprintf(&b, "OUT_DIR=%s\n\n", c.OutDir)
 	b.WriteString("# Postgres client: pgx (default) | pq\n")
 	fmt.Fprintf(&b, "DRIVER=%s\n\n", c.Driver)

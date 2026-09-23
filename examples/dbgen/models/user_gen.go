@@ -4,6 +4,7 @@
 package models
 
 import (
+	"context"
 	"time"
 
 	"github.com/vorzela/vorm/query"
@@ -23,11 +24,27 @@ type User struct {
 	DeletedAt    *time.Time `json:"deleted_at,omitempty" db:"deleted_at"`
 
 	// Relations — populated by .With(...); never selected or written.
-	AuthorPosts []Post   `json:"author_posts,omitempty" db:"-"`
-	EditorPosts []Post   `json:"editor_posts,omitempty" db:"-"`
-	Manager     *User    `json:"manager,omitempty" db:"-"`
-	Profile     *Profile `json:"profile,omitempty" db:"-"`
-	Users       []User   `json:"users,omitempty" db:"-"`
+	AuthorPosts        []Post    `json:"author_posts,omitempty" db:"-"`
+	AuthorPostsCount   int64     `json:"author_posts_count" db:"author_posts_count"`
+	AuthorPostsExists  bool      `json:"author_posts_exists" db:"author_posts_exists"`
+	Comments           []Comment `json:"comments,omitempty" db:"-"`
+	CommentsCount      int64     `json:"comments_count" db:"comments_count"`
+	CommentsExists     bool      `json:"comments_exists" db:"comments_exists"`
+	EditorPosts        []Post    `json:"editor_posts,omitempty" db:"-"`
+	EditorPostsCount   int64     `json:"editor_posts_count" db:"editor_posts_count"`
+	EditorPostsExists  bool      `json:"editor_posts_exists" db:"editor_posts_exists"`
+	LatestAuthorPost   *Post     `json:"latest_author_post,omitempty" db:"-"`
+	LatestEditorPost   *Post     `json:"latest_editor_post,omitempty" db:"-"`
+	Manager            *User     `json:"manager,omitempty" db:"-"`
+	OldestAuthorPost   *Post     `json:"oldest_author_post,omitempty" db:"-"`
+	OldestEditorPost   *Post     `json:"oldest_editor_post,omitempty" db:"-"`
+	PostComments       []Comment `json:"post_comments,omitempty" db:"-"`
+	PostCommentsCount  int64     `json:"post_comments_count" db:"post_comments_count"`
+	PostCommentsExists bool      `json:"post_comments_exists" db:"post_comments_exists"`
+	Profile            *Profile  `json:"profile,omitempty" db:"-"`
+	Users              []User    `json:"users,omitempty" db:"-"`
+	UsersCount         int64     `json:"users_count" db:"users_count"`
+	UsersExists        bool      `json:"users_exists" db:"users_exists"`
 }
 
 // UserTable is the table name for User.
@@ -73,4 +90,171 @@ var Users = query.Model[User](query.Meta{
 var UserIndexes = []query.IndexInfo{
 	{Name: "users_pkey", Columns: []string{"id"}, Unique: true, Primary: true, Method: "btree"},
 	{Name: "users_email_key", Columns: []string{"email"}, Unique: true, Primary: false, Method: "btree"},
+}
+
+// Relations are registered on package init so .With("name") resolves without
+// extra wiring. Every loader batches the whole result set into a bounded
+// number of queries — there is no per-row lookup.
+func init() {
+	query.RegisterRelation(query.Relation{
+		Name: "author_posts", Kind: query.RelationHasMany, Table: "posts", Field: "AuthorPosts",
+		LocalKey: "id", ForeignKey: "author_id",
+	}, func(ctx context.Context, db query.DB, rows []*User) error {
+		return query.LoadHasMany(ctx, db, rows, query.HasMany[User, Post]{
+			Related:    Posts,
+			ForeignKey: "author_id",
+			ParentKey:  func(m *User) any { return m.ID },
+			ChildKey:   func(r *Post) any { return r.AuthorID },
+			Assign:     func(m *User, rows []Post) { m.AuthorPosts = rows },
+		})
+	})
+
+	query.RegisterRelation(query.Relation{
+		Name: "comments", Kind: query.RelationHasManyThrough, Table: "comments", Field: "Comments",
+		LocalKey: "id", ForeignKey: "post_id",
+		PivotTable: "posts", PivotLocalKey: "author_id", PivotForeignKey: "id",
+	}, func(ctx context.Context, db query.DB, rows []*User) error {
+		return query.LoadHasManyThrough(ctx, db, rows, query.HasManyThrough[User, Comment]{
+			Related:      Comments,
+			ThroughTable: "posts",
+			ThroughLocal: "author_id",
+			ThroughFar:   "id",
+			FarKey:       "post_id",
+			ParentKey:    func(m *User) any { return m.ID },
+			Assign:       func(m *User, rows []Comment) { m.Comments = rows },
+		})
+	})
+
+	query.RegisterRelation(query.Relation{
+		Name: "editor_posts", Kind: query.RelationHasMany, Table: "posts", Field: "EditorPosts",
+		LocalKey: "id", ForeignKey: "editor_id",
+	}, func(ctx context.Context, db query.DB, rows []*User) error {
+		return query.LoadHasMany(ctx, db, rows, query.HasMany[User, Post]{
+			Related:    Posts,
+			ForeignKey: "editor_id",
+			ParentKey:  func(m *User) any { return m.ID },
+			ChildKey:   func(r *Post) any { return r.EditorID },
+			Assign:     func(m *User, rows []Post) { m.EditorPosts = rows },
+		})
+	})
+
+	query.RegisterRelation(query.Relation{
+		Name: "latest_author_post", Kind: query.RelationHasOneOfMany, Table: "posts", Field: "LatestAuthorPost",
+		LocalKey: "id", ForeignKey: "author_id",
+	}, func(ctx context.Context, db query.DB, rows []*User) error {
+		return query.LoadHasOneOfMany(ctx, db, rows, query.HasOneOfMany[User, Post]{
+			Related:    Posts,
+			ForeignKey: "author_id",
+			OrderCol:   "created_at",
+			Desc:       true,
+			ParentKey:  func(m *User) any { return m.ID },
+			ChildKey:   func(r *Post) any { return r.AuthorID },
+			Assign:     func(m *User, r *Post) { m.LatestAuthorPost = r },
+		})
+	})
+
+	query.RegisterRelation(query.Relation{
+		Name: "latest_editor_post", Kind: query.RelationHasOneOfMany, Table: "posts", Field: "LatestEditorPost",
+		LocalKey: "id", ForeignKey: "editor_id",
+	}, func(ctx context.Context, db query.DB, rows []*User) error {
+		return query.LoadHasOneOfMany(ctx, db, rows, query.HasOneOfMany[User, Post]{
+			Related:    Posts,
+			ForeignKey: "editor_id",
+			OrderCol:   "created_at",
+			Desc:       true,
+			ParentKey:  func(m *User) any { return m.ID },
+			ChildKey:   func(r *Post) any { return r.EditorID },
+			Assign:     func(m *User, r *Post) { m.LatestEditorPost = r },
+		})
+	})
+
+	query.RegisterRelation(query.Relation{
+		Name: "manager", Kind: query.RelationBelongsTo, Table: "users", Field: "Manager",
+		LocalKey: "manager_id", ForeignKey: "id",
+	}, func(ctx context.Context, db query.DB, rows []*User) error {
+		return query.LoadBelongsTo(ctx, db, rows, query.BelongsTo[User, User]{
+			Related:   Users,
+			OwnerKey:  "id",
+			ParentKey: func(m *User) any { return m.ManagerID },
+			ChildKey:  func(r *User) any { return r.ID },
+			Assign:    func(m *User, r *User) { m.Manager = r },
+		})
+	})
+
+	query.RegisterRelation(query.Relation{
+		Name: "oldest_author_post", Kind: query.RelationHasOneOfMany, Table: "posts", Field: "OldestAuthorPost",
+		LocalKey: "id", ForeignKey: "author_id",
+	}, func(ctx context.Context, db query.DB, rows []*User) error {
+		return query.LoadHasOneOfMany(ctx, db, rows, query.HasOneOfMany[User, Post]{
+			Related:    Posts,
+			ForeignKey: "author_id",
+			OrderCol:   "created_at",
+			Desc:       false,
+			ParentKey:  func(m *User) any { return m.ID },
+			ChildKey:   func(r *Post) any { return r.AuthorID },
+			Assign:     func(m *User, r *Post) { m.OldestAuthorPost = r },
+		})
+	})
+
+	query.RegisterRelation(query.Relation{
+		Name: "oldest_editor_post", Kind: query.RelationHasOneOfMany, Table: "posts", Field: "OldestEditorPost",
+		LocalKey: "id", ForeignKey: "editor_id",
+	}, func(ctx context.Context, db query.DB, rows []*User) error {
+		return query.LoadHasOneOfMany(ctx, db, rows, query.HasOneOfMany[User, Post]{
+			Related:    Posts,
+			ForeignKey: "editor_id",
+			OrderCol:   "created_at",
+			Desc:       false,
+			ParentKey:  func(m *User) any { return m.ID },
+			ChildKey:   func(r *Post) any { return r.EditorID },
+			Assign:     func(m *User, r *Post) { m.OldestEditorPost = r },
+		})
+	})
+
+	query.RegisterRelation(query.Relation{
+		Name: "post_comments", Kind: query.RelationHasManyThrough, Table: "comments", Field: "PostComments",
+		LocalKey: "id", ForeignKey: "post_id",
+		PivotTable: "posts", PivotLocalKey: "editor_id", PivotForeignKey: "id",
+	}, func(ctx context.Context, db query.DB, rows []*User) error {
+		return query.LoadHasManyThrough(ctx, db, rows, query.HasManyThrough[User, Comment]{
+			Related:      Comments,
+			ThroughTable: "posts",
+			ThroughLocal: "editor_id",
+			ThroughFar:   "id",
+			FarKey:       "post_id",
+			ParentKey:    func(m *User) any { return m.ID },
+			Assign:       func(m *User, rows []Comment) { m.PostComments = rows },
+		})
+	})
+
+	query.RegisterRelation(query.Relation{
+		Name: "profile", Kind: query.RelationHasOne, Table: "profiles", Field: "Profile",
+		LocalKey: "id", ForeignKey: "user_id",
+	}, func(ctx context.Context, db query.DB, rows []*User) error {
+		return query.LoadHasMany(ctx, db, rows, query.HasMany[User, Profile]{
+			Related:    Profiles,
+			ForeignKey: "user_id",
+			ParentKey:  func(m *User) any { return m.ID },
+			ChildKey:   func(r *Profile) any { return r.UserID },
+			Assign: func(m *User, rows []Profile) {
+				if len(rows) > 0 {
+					m.Profile = &rows[0]
+				}
+			},
+		})
+	})
+
+	query.RegisterRelation(query.Relation{
+		Name: "users", Kind: query.RelationHasMany, Table: "users", Field: "Users",
+		LocalKey: "id", ForeignKey: "manager_id",
+	}, func(ctx context.Context, db query.DB, rows []*User) error {
+		return query.LoadHasMany(ctx, db, rows, query.HasMany[User, User]{
+			Related:    Users,
+			ForeignKey: "manager_id",
+			ParentKey:  func(m *User) any { return m.ID },
+			ChildKey:   func(r *User) any { return r.ManagerID },
+			Assign:     func(m *User, rows []User) { m.Users = rows },
+		})
+	})
+
 }

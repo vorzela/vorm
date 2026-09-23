@@ -2,7 +2,7 @@
 
 A walkthrough of a real project, from an empty directory to typed queries running
 against PostgreSQL. Every command here is one you will actually type; the output
-shown is what vorm prints.
+shown is what vorm prints. For the full method catalog see [`API.md`](API.md).
 
 - [Install](#install)
 - [Start a project](#start-a-project)
@@ -12,6 +12,7 @@ shown is what vorm prints.
 - [Generate typed queries](#generate-typed-queries)
 - [Relations](#relations)
 - [Pagination](#pagination)
+- [Fast terminals](#fast-terminals)
 - [Errors](#errors)
 - [Logging](#logging)
 - [Transactions](#transactions)
@@ -115,6 +116,19 @@ func Down(s *schema.Facade) {
 `vorm generate models` introspects the live database (or `--from-blueprint` to
 parse the same Go files).
 
+**Relationship migrations.** These write an alter or a pivot instead of a full
+create:
+
+```bash
+vorm make belongs-to posts users          # posts.user_id → users
+vorm make belongs-to posts users author_id
+vorm make has-one users profiles          # unique profiles.user_id
+vorm make has-many users posts            # same FK as belongs-to, from the parent side
+vorm make belongs-to-many posts tags      # s.BelongsToMany("posts", "tags")
+vorm make morphs comments commentable     # commentable_type + commentable_id
+vorm make morph-to-many tags taggable     # taggables pivot (tag_id + morphs)
+```
+
 ```bash
 vorm migrate
 ```
@@ -145,9 +159,11 @@ vorm generate models
 vorm generate models: 2 table(s) from database introspection, package=models (DO NOT EDIT)
   models/user_gen.go
   models/enums_gen.go
-  models/relations_gen.go
   models/vorm_gen.go
 ```
+
+Relation loaders and Attach/Sync helpers are generated into the owning table
+file (`user_gen.go`), not a separate dump.
 
 Models come from the live database, so nullability, enum values, indexes and
 foreign keys are exact:
@@ -275,8 +291,12 @@ vorm generate
 
 ```
 vorm generate queries: 4 → ./vorm/gen (package gen, postgres/pgx)
-  vorm/gen/queries_gen.go
+  vorm/gen/db.go
+  vorm/gen/users.sql.go
 ```
+
+Each stub file becomes one `{source}.sql.go` (`queries/users.go` → `users.sql.go`);
+`db.go` holds the dialect and driver constants.
 
 You get an sqlc-style `Row`, a `Params` struct, and the SQL:
 
@@ -328,18 +348,44 @@ Generation never produces a function that fails at runtime.
 
 ## Relations
 
-Generated models register a loader per foreign key, so `With` resolves by name
-and loads the whole batch in one extra query:
+Generated models register a loader per association, so `With` resolves by name
+and never issues one query per parent. Column lists come from `Meta.Columns`;
+relation SQL never uses `SELECT *`.
 
 ```go
-users, err := models.Users.Where("active", true).With("posts").Get(ctx, db)
-for _, u := range users {
-	fmt.Println(u.Email, len(u.Posts))
-}
+users, err := models.Users.Where("active", true).
+	With("posts.comments", "profile").
+	Get(ctx, db)
 ```
 
-Two queries total, regardless of how many users came back. Nested and multiple
-relations work the same way: `With("posts", "profile")`.
+`With("posts.comments")` is three batched queries: users, then all of those
+users' posts in one `WHERE user_id IN (…)`, then all of those posts' comments
+in one `WHERE post_id IN (…)`.
+
+A join table with two foreign keys is many-to-many even when it has extra
+columns (`pinned`, timestamps, …). Attach SQL follows the real pivot:
+`created_at` / `updated_at` are written only when those columns exist, and
+`ON CONFLICT` / MySQL `INSERT IGNORE` only when the two FK columns are unique.
+
+Go cannot reuse the eager-load field name as a method, so the generated API is:
+
+```go
+err := post.AttachTags(ctx, db, tagID)
+err := post.TagsRelation().AttachWith(ctx, db, tagID, map[string]any{"pinned": true})
+err := post.DetachTags(ctx, db, tagID) // no IDs → detach all
+err := post.SyncTags(ctx, db, tagIDs...)
+err := post.ToggleTags(ctx, db, tagIDs...)
+```
+
+`t.Morphs("commentable")` adds `commentable_type` + `commentable_id` (no FK).
+The child gets `morphTo`; every other table gets `morphMany`. The type column
+stores the **table name** (`posts`, not a PHP class):
+
+```go
+comments, err := models.Posts.With("comments").Get(ctx, db)
+// SELECT … FROM comments WHERE commentable_id IN (…) AND commentable_type = $n
+// $n = "posts"
+```
 
 Hand-written loaders use the same primitives:
 
@@ -353,9 +399,11 @@ query.LoadHasMany(ctx, db, rows, query.HasMany[User, Post]{
 })
 ```
 
-`LoadBelongsTo` and `LoadBelongsToMany` cover the other directions.
+`LoadBelongsTo`, `LoadBelongsToMany`, `LoadHasManyThrough`, `LoadHasOneOfMany` and `LoadMorphTo` cover the other directions.
 
 ## Pagination
+
+Offset pagination (Laravel `paginate`) runs the page query plus `COUNT(*)`:
 
 ```go
 page, err := models.Users.Where("active", true).OrderBy("id").
@@ -367,15 +415,55 @@ page.Pages
 page.HasMore
 ```
 
-`PageResult` marshals to JSON directly, so an HTTP handler can return it as-is.
-For deep pagination use the cursor style, which does not scan skipped rows:
+`SimplePaginate` is the same `LIMIT`/`OFFSET` page without `COUNT(*)` (`HasMore`
+comes from a peek row). For deep pagination use cursor/keyset style, which does
+not scan skipped rows:
 
 ```go
-page, err := models.Users.OrderBy("id").Paginate(ctx, db, query.PageRequest{
-	Style: query.PageCursor, PerPage: 50, Cursor: c,
-})
+page, err := models.Users.SimplePaginate(ctx, db, 2, 25)
+
+page, err := models.Users.OrderBy("id").CursorPaginate(ctx, db, cursor, 50)
+// SELECT … FROM "users" WHERE "id" > $1 ORDER BY "id" ASC LIMIT 51
 next := page.NextCursor
 ```
+
+`PageResult` marshals to JSON directly, so an HTTP handler can return it as-is.
+
+## Fast terminals
+
+These stay parameterized and never emit `SELECT *`. `ChunkByID` is keyset (not
+OFFSET). Aggregates, `Pluck`, `Increment`, and `Upsert` compile to a single
+statement:
+
+```go
+err := models.Users.Where("active", true).ChunkByID(ctx, db, 1000, func(rows []models.User) error {
+	return nil
+})
+emails, err := models.Users.Where("active", true).Pluck(ctx, db, "email")
+sum, err := models.Users.Sum(ctx, db, "age")
+_, err = models.Users.Where("id", id).Increment(ctx, db, "age", 1)
+_, err = models.Users.Upsert(ctx, db, []map[string]any{{"email": e, "name": n}}, []string{"email"}, []string{"name"})
+row, err := models.Users.FirstOrCreate(ctx, db, map[string]any{"email": e}, map[string]any{"name": n})
+```
+
+`WhereHas` / `WithCount` are correlated subqueries, not N+1:
+
+```go
+users, err := models.Users.WhereHas("posts").WithCount("posts").Get(ctx, db)
+// WHERE EXISTS (SELECT 1 FROM "posts" WHERE "posts"."user_id" = "users"."id")
+// SELECT …, (SELECT COUNT(*) FROM "posts" WHERE …) AS "posts_count"
+```
+
+Postgres FTS and JSON containment:
+
+```go
+models.Users.WhereFullText("search_vector", "ada & lovelace")
+models.Posts.WhereJsonContains("metadata", `{"draft":false}`)
+```
+
+Generated function wrappers never use `SELECT *`: a set-returning routine is
+`SELECT v FROM fn($1) AS t(v)`. Declarative `migrations/{extensions,enums,functions}.sql`
+are synced with `vorm extensions|enums|functions`.
 
 ## Errors
 
@@ -591,6 +679,7 @@ and the reason.
 ## See also
 
 - [`../README.md`](../README.md) — overview and configuration reference
+- [`API.md`](API.md) — catalog of every CLI command and Go API
 - [`MIGRATIONS.md`](MIGRATIONS.md) — file format, locks, checksums, drift
 - [`../LLM.md`](../LLM.md) — rules for agents working in a vorm project
 - [`../examples/`](../examples/) — stubs next to their generated output

@@ -29,6 +29,9 @@ func TestBelongsToAndPivot(t *testing.T) {
 	if err := schema.BelongsToMany(f, "post_tag", "post_id", "posts", "tag_id", "tags"); err != nil {
 		t.Fatal(err)
 	}
+	if err := f.MorphToMany("tags", "taggable"); err != nil {
+		t.Fatal(err)
+	}
 
 	posts := readOne(t, dir, "create_posts")
 	if !strings.Contains(posts, "user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE") {
@@ -37,6 +40,10 @@ func TestBelongsToAndPivot(t *testing.T) {
 	pivot := readOne(t, dir, "create_post_tag")
 	if !strings.Contains(pivot, "post_id") || !strings.Contains(pivot, "tag_id") {
 		t.Fatalf("pivot:\n%s", pivot)
+	}
+	morph := readOne(t, dir, "create_taggables")
+	if !strings.Contains(morph, "tag_id") || !strings.Contains(morph, "taggable_type") {
+		t.Fatalf("morph pivot:\n%s", morph)
 	}
 }
 

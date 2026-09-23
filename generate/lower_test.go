@@ -3,6 +3,7 @@ package generate
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -14,6 +15,18 @@ const (
 	exampleModelDir = "../examples/generated/models"
 	exampleOutDir   = "../examples/generated/vorm/gen"
 )
+
+const sampleQueryHeader = "// Sample path: examples/generated/ — real apps use ./vorm/gen/db.go and *.sql.go"
+
+func applyQuerySampleHeader(name, body string) string {
+	if name != "db.go" {
+		return body
+	}
+	return strings.Replace(body,
+		"// Models table structs: vorm generate models (DO NOT EDIT models/).",
+		sampleQueryHeader,
+		1)
+}
 
 func TestGeneratedQueryExampleIsUpToDate(t *testing.T) {
 	dir := t.TempDir()
@@ -28,30 +41,51 @@ func TestGeneratedQueryExampleIsUpToDate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := os.ReadFile(filepath.Join(dir, "queries_gen.go"))
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Keep the sample header pointing at the example path.
-	body := strings.Replace(string(got),
-		"// Models table structs: vorm generate models (DO NOT EDIT models/).",
-		"// Sample path: examples/generated/ — real apps use ./vorm/gen/queries_gen.go",
-		1)
-
-	golden := filepath.Join(exampleOutDir, "queries_gen.go")
 	if *updateGolden {
-		if err := os.WriteFile(golden, []byte(body), 0o644); err != nil {
+		if err := os.RemoveAll(exampleOutDir); err != nil {
 			t.Fatal(err)
 		}
-		t.Logf("updated %s (%d queries, %d runtime-only)", golden, res.Queries, len(res.Pending))
+		if err := os.MkdirAll(exampleOutDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range entries {
+			b, err := os.ReadFile(filepath.Join(dir, e.Name()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := applyQuerySampleHeader(e.Name(), string(b))
+			if err := os.WriteFile(filepath.Join(exampleOutDir, e.Name()), []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		t.Logf("updated %d files in %s (%d queries, %d runtime-only)", len(entries), exampleOutDir, res.Queries, len(res.Pending))
 		return
 	}
-	want, err := os.ReadFile(golden)
-	if err != nil {
-		t.Fatalf("%s missing (run: go test ./generate -update): %v", golden, err)
+
+	gotNames := map[string]bool{}
+	for _, e := range entries {
+		gotNames[e.Name()] = true
+		got := applyQuerySampleHeader(e.Name(), readGenerated(t, dir, e.Name()))
+		want, err := os.ReadFile(filepath.Join(exampleOutDir, e.Name()))
+		if err != nil {
+			t.Fatalf("%s missing (run: go test ./generate -update): %v", e.Name(), err)
+		}
+		if string(want) != got {
+			t.Errorf("%s drifted from the generator (run: go test ./generate -update)", e.Name())
+		}
 	}
-	if string(want) != body {
-		t.Errorf("%s drifted from the generator (run: go test ./generate -update)", golden)
+	goldenEntries, err := os.ReadDir(exampleOutDir)
+	if err != nil {
+		t.Fatalf("%s missing (run: go test ./generate -update): %v", exampleOutDir, err)
+	}
+	for _, e := range goldenEntries {
+		if !gotNames[e.Name()] {
+			t.Errorf("%s is leftover in the committed example (run: go test ./generate -update)", e.Name())
+		}
 	}
 }
 
@@ -108,11 +142,29 @@ func lower(t *testing.T, dialect, stubBody string) string {
 	}); err != nil {
 		t.Fatalf("generate: %v", err)
 	}
-	body, err := os.ReadFile(filepath.Join(outdir, "queries_gen.go"))
+	return readSQLGo(t, outdir)
+}
+
+func readSQLGo(t *testing.T, outdir string) string {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(outdir, "*.sql.go"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return string(body)
+	if len(matches) == 0 {
+		t.Fatalf("no *.sql.go in %s", outdir)
+	}
+	sort.Strings(matches)
+	var b strings.Builder
+	for _, m := range matches {
+		body, err := os.ReadFile(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.Write(body)
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 func wants(t *testing.T, src string, want ...string) {
@@ -315,11 +367,7 @@ func GroupByID(ctx context.Context, db query.DB, id string) (*Group, error) {
 	if len(res.Pending) != 0 {
 		t.Fatalf("FindByID should lower: %+v", res.Pending)
 	}
-	body, err := os.ReadFile(filepath.Join(outdir, "queries_gen.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	src := string(body)
+	src := readSQLGo(t, outdir)
 	wants(t, src,
 		`WHERE "uuid" = $1`,
 		"LIMIT 1",
@@ -469,5 +517,179 @@ func Eager(ctx context.Context, db query.DB) ([]User, error) {
 	}
 	if !strings.Contains(res.Pending[0].Reason, "eager loading") {
 		t.Fatalf("reason should explain why: %q", res.Pending[0].Reason)
+	}
+}
+
+func TestLowerSimplePaginateHasNoCount(t *testing.T) {
+	src := lower(t, "postgres", `
+// vorm:query name=Simple
+func Simple(ctx context.Context, db query.DB, page, perPage int) (*query.PageResult[User], error) {
+	return Users.Where("active", true).OrderBy("id").SimplePaginate(ctx, db, page, perPage)
+}
+`)
+	wants(t, src,
+		"LIMIT $2 OFFSET $3",
+		"limitN := perPage + 1",
+		"string(query.PageSimple)",
+	)
+	if strings.Contains(src, "SELECT COUNT(*)") {
+		t.Errorf("simplePaginate must not COUNT:\n%s", src)
+	}
+}
+
+func TestLowerCursorPaginateEmitsTwoStatements(t *testing.T) {
+	src := lower(t, "postgres", `
+// vorm:query name=Cursor
+func Cursor(ctx context.Context, db query.DB, cursor string, perPage int) (*query.PageResult[User], error) {
+	return Users.Where("active", true).OrderBy("id").CursorPaginate(ctx, db, cursor, perPage)
+}
+`)
+	wants(t, src,
+		`ORDER BY "id" ASC LIMIT $2`,
+		`"id" > $2`,
+		"query.DecodeCursor(cursor)",
+		"query.EncodeCursor(val)",
+		"query.CursorValue",
+		"string(query.PageCursor)",
+		"cursorSQLAfter",
+	)
+	if strings.Contains(src, "SELECT COUNT(*)") {
+		t.Errorf("cursor paginate must not COUNT:\n%s", src)
+	}
+}
+
+func TestLowerPluckIncrementAndOnlyTrashed(t *testing.T) {
+	src := lower(t, "postgres", `
+// vorm:query name=Emails
+func Emails(ctx context.Context, db query.DB) ([]any, error) {
+	return Users.Where("active", true).Pluck(ctx, db, "email")
+}
+
+// vorm:query name=BumpAge
+func BumpAge(ctx context.Context, db query.DB, id int64) (int64, error) {
+	return Users.Where("id", id).Increment(ctx, db, "age", 2)
+}
+
+// vorm:query name=Trashed
+func Trashed(ctx context.Context, db query.DB) ([]User, error) {
+	return Users.OnlyTrashed().Get(ctx, db)
+}
+
+// vorm:query name=AdultSum
+func AdultSum(ctx context.Context, db query.DB) (float64, error) {
+	return Users.Where("active", true).Sum(ctx, db, "age")
+}
+`)
+	wants(t, src,
+		`SELECT "email" FROM "users" WHERE "active" = $1 AND "deleted_at" IS NULL`,
+		`UPDATE "users" SET "age" = "age" + $1 WHERE "id" = $2 AND "deleted_at" IS NULL`,
+		`"deleted_at" IS NOT NULL`,
+		`SELECT SUM("age") FROM "users" WHERE "active" = $1 AND "deleted_at" IS NULL`,
+	)
+}
+
+func TestLowerWhereHasAndWithCount(t *testing.T) {
+	root := t.TempDir()
+	qdir := filepath.Join(root, "queries")
+	mdir := filepath.Join(root, "models")
+	outdir := filepath.Join(root, "gen")
+	for _, d := range []string{qdir, mdir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	model := `// Code generated by vorm generate models; DO NOT EDIT.
+package models
+
+import (
+	"context"
+
+	"github.com/vorzela/vorm"
+	"github.com/vorzela/vorm/query"
+)
+
+type User struct {
+	vorm.Model
+	Email  string ` + "`json:\"email\" db:\"email\"`" + `
+	Name   string ` + "`json:\"name\" db:\"name\"`" + `
+	Active bool   ` + "`json:\"active\" db:\"active\"`" + `
+	Age    int    ` + "`json:\"age\" db:\"age\"`" + `
+}
+
+var Users = query.Model[User](query.Meta{
+	Table: "users",
+	Columns: []string{
+		"id", "email", "name", "active", "age",
+		"created_at", "updated_at", "deleted_at",
+	},
+	SoftDeletes: true,
+})
+
+func init() {
+	query.RegisterRelation(query.Relation{
+		Name: "posts", Kind: query.RelationHasMany, Table: "posts",
+		LocalKey: "id", ForeignKey: "user_id",
+	}, func(ctx context.Context, db query.DB, rows []*User) error { return nil })
+}
+`
+	stub := `package queries
+
+import (
+	"context"
+
+	"github.com/vorzela/vorm/query"
+)
+
+// vorm:query name=WithPosts
+func WithPosts(ctx context.Context, db query.DB, state string) ([]User, error) {
+	return Users.WhereHas("posts").WhereRelation("posts", "state", state).WithCount("posts").Get(ctx, db)
+}
+
+// vorm:query name=Search
+func Search(ctx context.Context, db query.DB, q string) ([]User, error) {
+	return Users.WhereFullText("name", q).WhereJsonContains("email", q).Get(ctx, db)
+}
+`
+	if err := os.MkdirAll(mdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(qdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mdir, "user.go"), []byte(model), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(qdir, "q.go"), []byte(stub), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Run(&Options{QueryDir: qdir, OutDir: outdir, ModelDir: mdir, Dialect: "postgres"}); err != nil {
+		t.Fatal(err)
+	}
+	src := readSQLGo(t, outdir)
+	wants(t, src,
+		`EXISTS (SELECT 1 FROM "posts" WHERE "posts"."user_id" = "users"."id")`,
+		`"posts"."state" = $1`,
+		`(SELECT COUNT(*) FROM "posts" WHERE "posts"."user_id" = "users"."id") AS "posts_count"`,
+		`"name" @@ to_tsquery('english', $1)`,
+		`"email" @> $2::jsonb`,
+	)
+}
+
+func TestLowerWhereRawPlaceholders(t *testing.T) {
+	src := lower(t, "postgres", `
+// vorm:query name=Nearby
+func Nearby(ctx context.Context, db query.DB, lon float64, lat float64, meters int) ([]User, error) {
+	return Users.WhereRaw("ST_DWithin(location, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography, ?)", lon, lat, meters).Get(ctx, db)
+}
+`)
+	wants(t, src,
+		"ST_MakePoint($1, $2)",
+		"$3)",
+		"arg.Lon",
+		"arg.Lat",
+		"arg.Meters",
+	)
+	if !strings.Contains(src, "ST_MakePoint($1, $2), 4326)::geography, $3)") {
+		t.Fatalf("generated SQL:\n%s", src)
 	}
 }

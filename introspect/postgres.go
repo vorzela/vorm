@@ -19,6 +19,13 @@ JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname = $1
   AND c.relkind IN ('r', 'p', 'v', 'm')
   AND NOT c.relispartition
+  -- Extension members (PostGIS spatial_ref_sys, and the like) are not app tables.
+  AND NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_depend d
+    WHERE d.classid = 'pg_catalog.pg_class'::regclass
+      AND d.objid = c.oid
+      AND d.deptype = 'e'
+  )
 ORDER BY c.relname`
 
 // attidentity and attgenerated are "char" columns holding a zero byte when the
@@ -134,6 +141,13 @@ JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
 JOIN pg_catalog.pg_language l ON l.oid = p.prolang
 WHERE n.nspname = $1
   AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+  -- Skip routines installed by extensions (PostGIS ships hundreds).
+  AND NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_depend d
+    WHERE d.classid = 'pg_catalog.pg_proc'::regclass
+      AND d.objid = p.oid
+      AND d.deptype = 'e'
+  )
 ORDER BY p.proname, p.oid`
 
 // Postgres reads a PostgreSQL schema from pg_catalog. It runs six schema-wide

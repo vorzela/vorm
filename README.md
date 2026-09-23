@@ -10,6 +10,7 @@ go install github.com/vorzela/vorm/cmd/vorm@latest
 export DATABASE_URL=postgres://user:pass@localhost:5432/app?sslmode=disable
 vorm init                 # write .vorm (dialect detected from DATABASE_URL)
 vorm make migration posts # timestamped Blueprint Up/Down in migrations/
+vorm make belongs-to-many posts tags
 vorm migrate              # apply migrations in-process
 vorm generate             # models from the database + typed queries from stubs
 ```
@@ -22,7 +23,7 @@ vorm generate             # models from the database + typed queries from stubs
 | `migrations/{extensions,enums,functions}.sql` | you | declarative PostgreSQL prerequisites |
 | `queries/` | you | `// vorm:query` stubs |
 | **`models/`** | `vorm generate models` | **never hand-edit** — structs, enums, indexes, relations |
-| **`vorm/gen/`** | `vorm generate` | **never hand-edit** — `*Row` / `*Params` + SQL |
+| **`vorm/gen/`** | `vorm generate` | **never hand-edit** — `db.go` + one `{source}.sql.go` per stub file |
 
 ## Migrations run in-process
 
@@ -38,7 +39,8 @@ vorm fresh --force          # roll everything back, then re-apply
 
 A migration file is numbered Blueprint Go (`{unix}_{name}.go`) with `Up`/`Down`.
 Legacy numbered `.sql` files still apply. `vorm make migration posts` writes Go;
-the runner compiles the Blueprint AST to SQL and never executes `Up`/`Down`.
+`vorm make belongs-to` / `belongs-to-many` / `morphs` write relationship
+Blueprints. The runner compiles the AST to SQL and never executes `Up`/`Down`.
 
 ```go
 func Up(s *schema.Facade) {
@@ -207,8 +209,9 @@ Each event carries the SQL, arguments, duration, rows affected and error.
 
 ## Relations
 
-Generated models register their foreign keys, so `With("posts")` loads every
-parent's children in one extra query:
+Generated models register associations from foreign keys, pivot tables and
+`t.Morphs(...)`, so `With("posts")` / `With("posts.comments")` load a whole
+batch in a bounded number of queries. Projection is always `Meta.Columns`.
 
 ```go
 query.RegisterRelation(query.Relation{
@@ -225,7 +228,12 @@ query.RegisterRelation(query.Relation{
 })
 ```
 
-`LoadHasMany`, `LoadBelongsTo` and `LoadBelongsToMany` are also usable directly.
+Many-to-many uses `TagsRelation().Attach/Detach/Sync/Toggle` (and `AttachTags`,
+…) because Go cannot reuse the `Tags` field name for a method. `t.Morphs("commentable")`
+stores the related **table name** in `commentable_type`.
+
+`LoadHasMany`, `LoadBelongsTo`, `LoadBelongsToMany` and `LoadMorphTo` are also
+usable directly.
 
 ## Drivers
 
@@ -247,7 +255,7 @@ vorm config lint
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `PACKAGE` | `gen` | package name for generated queries |
-| `OUT_DIR` | `./vorm/<PACKAGE>` | where `queries_gen.go` is written |
+| `OUT_DIR` | `./vorm/<PACKAGE>` | where `db.go` and `{source}.sql.go` are written |
 | `DRIVER` | `pgx` | `pgx` or `pq` |
 | `DIALECT` | `postgres` | `postgres`, `mysql`, `mariadb` |
 | `MIGRATION_PATH` | `./migrations` | SQL directory |
@@ -257,6 +265,7 @@ vorm config lint
 
 ## Further reading
 
+- [`docs/API.md`](docs/API.md) — catalog of every CLI command and Go API
 - [`docs/USAGE.md`](docs/USAGE.md) — end-to-end usage guide, from install to recipes
 - [`docs/MIGRATIONS.md`](docs/MIGRATIONS.md) — file format, locks, prerequisites
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — pipelines and package boundaries

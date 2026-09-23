@@ -22,6 +22,7 @@ type Column struct {
 	onUpdate      string
 	enumName      string
 	enumValues    []string
+	custom        bool // set by CustomType; name arrives via Column
 }
 
 func newColumn(name string) *Column {
@@ -160,7 +161,32 @@ func (c *Column) enumType(typeName string, values []string) *Column {
 	return c
 }
 
+// Column names the field created by CustomType.
+//
+//	t.CustomType("GEOGRAPHY(POINT, 4326)").Column("location")
+func (c *Column) Column(name string) *Column {
+	if err := c.setName(name); err != nil {
+		panic(err)
+	}
+	return c
+}
+
+func (c *Column) setName(name string) error {
+	if !c.custom {
+		return fmt.Errorf("vorm/schema: Column() is only valid after CustomType")
+	}
+	name = strings.TrimSpace(name)
+	if !colIdentRe.MatchString(name) {
+		return fmt.Errorf("vorm/schema: invalid column name %q", name)
+	}
+	c.name = name
+	return nil
+}
+
 func (c *Column) sql(mysql bool) string {
+	if c.name == "" {
+		panic("vorm/schema: CustomType requires .Column(\"name\")")
+	}
 	var b strings.Builder
 	b.WriteString(c.name)
 	b.WriteString(" ")

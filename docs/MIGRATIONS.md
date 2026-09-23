@@ -35,7 +35,19 @@ func Down(s *schema.Facade) {
 ```
 
 `vorm make migration posts` writes that file. `vorm make migration post_tag`
-writes `s.BelongsToMany("posts", "tags")`. Numbered `*.sql` files with Up/Down
+writes `s.BelongsToMany("posts", "tags")`. Dedicated relation commands do the
+same job with explicit names:
+
+```bash
+vorm make belongs-to posts users          # alter posts: t.BelongsTo("user_id", "users")
+vorm make has-one users profiles          # unique FK on profiles
+vorm make has-many users posts            # FK on posts (inverse of belongs-to)
+vorm make belongs-to-many posts tags      # pivot table
+vorm make morphs comments commentable     # morphTo columns on comments
+vorm make morph-to-many tags taggable     # polymorphic pivot taggables
+```
+
+Numbered `*.sql` files with Up/Down
 markers still apply (legacy). Files without a numeric prefix are ignored, which
 is what keeps `extensions.sql`, `enums.sql` and `functions.sql` out of the
 sequence.

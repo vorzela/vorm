@@ -66,21 +66,30 @@ func DefaultDialect() Dialect {
 // Builder is a fluent query IR that also compiles/runs performant SQL
 // with explicit column lists (never SELECT *).
 type Builder[T any] struct {
-	meta       Meta
-	dialect    Dialect
-	selects    []string
-	wheres     []pred
-	havings    []pred
-	orderBy    []order
-	joins      []joinClause
-	groupBy    []string
-	distinct   bool
-	distinctOn []string
-	lock       string
-	limit      int
-	offset     int
-	soft       bool // respect soft deletes when meta.SoftDeletes
-	with       []string
+	meta         Meta
+	dialect      Dialect
+	selects      []string
+	wheres       []pred
+	havings      []pred
+	orderBy      []order
+	joins        []joinClause
+	groupBy      []string
+	distinct     bool
+	distinctOn   []string
+	lock         string
+	limit        int
+	offset       int
+	soft         bool // respect soft deletes when meta.SoftDeletes
+	onlyTrashed  bool // WHERE deleted_at IS NOT NULL
+	with         []string
+	extraSelects []extraSelect
+}
+
+// extraSelect is a subquery (or expression) projected alongside Meta.Columns.
+// Aliases like posts_count are not in Meta.Columns, so they are never written.
+type extraSelect struct {
+	sql   string
+	alias string
 }
 
 type pred struct {
@@ -102,6 +111,22 @@ func newBuilder[T any](meta Meta) *Builder[T] {
 		selects: append([]string(nil), meta.Columns...),
 		soft:    meta.SoftDeletes,
 	}
+}
+
+// clone copies the builder so later mutations (extra WHERE, LIMIT) cannot
+// alias the original slice headers.
+func (b *Builder[T]) clone() *Builder[T] {
+	cp := *b
+	cp.selects = append([]string(nil), b.selects...)
+	cp.wheres = append([]pred(nil), b.wheres...)
+	cp.havings = append([]pred(nil), b.havings...)
+	cp.orderBy = append([]order(nil), b.orderBy...)
+	cp.joins = append([]joinClause(nil), b.joins...)
+	cp.groupBy = append([]string(nil), b.groupBy...)
+	cp.distinctOn = append([]string(nil), b.distinctOn...)
+	cp.with = append([]string(nil), b.with...)
+	cp.extraSelects = append([]extraSelect(nil), b.extraSelects...)
+	return &cp
 }
 
 // With eager-loads registered relations after the rows are fetched. Each relation
@@ -244,6 +269,14 @@ func (b *Builder[T]) Offset(n int) *Builder[T] {
 // WithTrashed includes soft-deleted rows.
 func (b *Builder[T]) WithTrashed() *Builder[T] {
 	b.soft = false
+	b.onlyTrashed = false
+	return b
+}
+
+// OnlyTrashed restricts the query to soft-deleted rows (WHERE deleted_at IS NOT NULL).
+func (b *Builder[T]) OnlyTrashed() *Builder[T] {
+	b.soft = false
+	b.onlyTrashed = true
 	return b
 }
 

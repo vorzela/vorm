@@ -176,17 +176,10 @@ func PaginateActiveUsers(ctx context.Context, db query.DB, page, perPage int) (*
 	return Users.Where("active", true).OrderBy("id").OffsetPage(ctx, db, page, perPage)
 }
 
-// PaginateUsersCursor — keyset cursor; stateful, so it stays on the builder.
+// PaginateUsersCursor — keyset pagination; two prepared statements (first page / after cursor).
 //
 // vorm:query name=PaginateUsersCursor
 func PaginateUsersCursor(ctx context.Context, db query.DB, cursor string, perPage int) (*query.PageResult[User], error) {
-	ctx = query.WithMapper(ctx, scanUser)
-	ctx = query.WithCursorValue(ctx, func(u User, col string) any {
-		if col == "id" {
-			return u.ID
-		}
-		return nil
-	})
 	return Users.Paginate(ctx, db, query.PageRequest{
 		Style:   query.PageCursor,
 		Cursor:  cursor,

@@ -15,7 +15,10 @@
 
 ```bash
 vorm make migration posts   # timestamped Blueprint Go in migrations/
-# edit migrations/<ts>_create_posts_table.go
+vorm make belongs-to posts users
+vorm make belongs-to-many posts tags
+vorm make morphs comments commentable
+# edit migrations/<ts>_*.go
 vorm migrate                # compile Blueprint, lint, lock, apply, checksum
 vorm generate               # models from the DB, then typed queries
 ```
@@ -29,17 +32,28 @@ shows what vorm sees in the database.
 `WhereNotNull`, `WhereSearch`, `WhereRaw`, `OrWhere`, `Join` / `LeftJoin`,
 `GroupBy`, `Having`, `OrderBy`, `Limit`, `Offset`, `Distinct`, `WithTrashed`,
 locks, and the terminals `Get`, `First`, `FirstOrFail`, `FindByID`, `Count`, `Exists`,
-`Paginate`, `Create`, `Update`, `Delete`, `SoftDelete`, `ForceDelete`, `Restore`.
+`Paginate`, `SimplePaginate`, `CursorPaginate`, `Create`, `Update`, `Delete`,
+`SoftDelete`, `ForceDelete`, `Restore`, `Pluck`, `Sum` / `Avg` / `Min` / `Max`,
+`Increment` / `Decrement`, `OnlyTrashed`.
 
 Anything else is reported as pending with a reason and keeps running through the
-builder. Pending stubs are never emitted as broken functions.
+builder. Pending stubs are never emitted as broken functions. Runtime-only
+terminals (`ChunkByID`, `Upsert`, `FirstOrCreate`, `UpdateOrCreate`) still emit
+parameterized SQL when called on the builder.
+
+`WhereHas` / `WhereDoesntHave` / `WhereRelation`, `WithCount` / `WithExists`,
+`WhereFullText`, `WhereJsonContains`, and `DistinctOn` also lower when names and
+columns are literals.
 
 ## Generated shape
 
+- `vorm/gen/db.go` — `GeneratedDialect` / `GeneratedDriver`
+- `vorm/gen/{source}.sql.go` — one file per `queries/` stub file (`users.go` → `users.sql.go`; nested dirs become `admin_users.sql.go`)
 - `FuncNameRow` — exactly the projected columns, with model types (enums are qualified, e.g. `models.UserStatus`)
 - `FuncNameParams` — bound arguments, when the stub takes any
 - The function itself: a SQL const when the shape is fixed, `strings.Builder` assembly only when a variable-length `IN` requires it
 - `scanFuncNameRow` aligned to the projection
+- Relation loaders live on the table model (`models/user_gen.go`), not a separate `relations_gen.go`
 
 ## Errors
 
@@ -79,3 +93,14 @@ versioned in a specific migration.
 - `Where("actve", …)` — fails the column check
 - `Where("active", "yes")` on a bool column — fails the type check
 - Adding a column in SQL and not rerunning `vorm generate`
+
+## Relations
+
+`With("posts.comments")` is nested eager load (one batched `IN` query per path
+segment). Pivot tables with extra columns are still many-to-many. Generated
+helpers are `TagsRelation().Attach/Detach/Sync/Toggle` and `AttachTags` — Go
+cannot reuse the `Tags` field as a method. `t.Morphs("commentable")` → morphTo on the child and morphMany on other tables;
+`commentable_type` stores the table name. A join table with one real FK plus
+`{name}_type`/`{name}_id` is morphToMany. `hasManyThrough` is planned when A
+hasMany B and B hasMany C; `latest_*` / `oldest_*` are hasOneOfMany (Postgres
+`DISTINCT ON`, MySQL `MAX`/`MIN` join).

@@ -78,6 +78,16 @@ func (b *Builder[T]) CompileSelect() (sql string, args []any, err error) {
 		}
 	}
 	sb.WriteString(strings.Join(quotedCols, ", "))
+	for _, e := range b.extraSelects {
+		alias, err := QuoteIdent(b.dialect, e.alias)
+		if err != nil {
+			return "", nil, err
+		}
+		sb.WriteString(", ")
+		sb.WriteString(e.sql)
+		sb.WriteString(" AS ")
+		sb.WriteString(alias)
+	}
 	sb.WriteString(" FROM ")
 	sb.WriteString(tableQ)
 	sb.WriteString(compileJoinsQuoted(b.joins, b.dialect))
@@ -138,6 +148,14 @@ func (b *Builder[T]) CompileSelect() (sql string, args []any, err error) {
 	return sb.String(), args, nil
 }
 
+func (b *Builder[T]) scanColumns() []string {
+	cols := append([]string(nil), b.selects...)
+	for _, e := range b.extraSelects {
+		cols = append(cols, e.alias)
+	}
+	return cols
+}
+
 func compileJoinsQuoted(joins []joinClause, dialect Dialect) string {
 	if len(joins) == 0 {
 		return ""
@@ -172,7 +190,7 @@ func (b *Builder[T]) compileWhere(argStart int) (string, []any, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	if !b.meta.SoftDeletes || !b.soft {
+	if !b.meta.SoftDeletes || (!b.soft && !b.onlyTrashed) {
 		return sqlText, args, nil
 	}
 	del, err := QuoteIdent(b.dialect, b.qualify("deleted_at"))
@@ -180,6 +198,9 @@ func (b *Builder[T]) compileWhere(argStart int) (string, []any, error) {
 		return "", nil, err
 	}
 	filter := del + " IS NULL"
+	if b.onlyTrashed {
+		filter = del + " IS NOT NULL"
+	}
 	switch {
 	case sqlText == "":
 		return filter, args, nil
@@ -228,15 +249,27 @@ func (b *Builder[T]) compilePreds(preds []pred, argStart int, allowOr bool) (str
 			}
 			clause = tmpParts[0]
 		case "__exists__":
-			clause = "EXISTS (" + p.op + ")"
-			if raw, ok := p.arg.([]any); ok {
-				args = append(args, raw...)
+			var more []any
+			var err error
+			clause, more, err = b.compileExistsPred(p, false, placeholder)
+			if err != nil {
+				return "", nil, err
 			}
+			args = append(args, more...)
 		case "__not_exists__":
-			clause = "NOT EXISTS (" + p.op + ")"
-			if raw, ok := p.arg.([]any); ok {
-				args = append(args, raw...)
+			var more []any
+			var err error
+			clause, more, err = b.compileExistsPred(p, true, placeholder)
+			if err != nil {
+				return "", nil, err
 			}
+			args = append(args, more...)
+		case "__fts__", "__json__":
+			var tmpParts []string
+			if err := appendSearchOrRaw(b.dialect, p, &tmpParts, &args, placeholder); err != nil {
+				return "", nil, err
+			}
+			clause = tmpParts[0]
 		default:
 			op := strings.ToUpper(p.op)
 			if op == "" {
@@ -334,7 +367,7 @@ func (b *Builder[T]) Get(ctx context.Context, db DB) ([]T, error) {
 
 	mapper := rowMapperFromContext[T](ctx)
 	if mapper == nil {
-		mapper, err = structScanner[T](b.selects)
+		mapper, err = structScanner[T](b.scanColumns())
 		if err != nil {
 			return nil, err
 		}
@@ -408,7 +441,7 @@ func (b *Builder[T]) Each(ctx context.Context, db DB, fn func(T) error) error {
 	}
 	mapper := rowMapperFromContext[T](ctx)
 	if mapper == nil {
-		mapper, err = structScanner[T](b.selects)
+		mapper, err = structScanner[T](b.scanColumns())
 		if err != nil {
 			return err
 		}

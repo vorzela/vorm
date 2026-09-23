@@ -65,7 +65,7 @@ func main() {
 			fatal(err)
 		}
 	case "version", "--version":
-		fmt.Println("vorm 0.1.0 (Vorzela v3)")
+		fmt.Println("vorm 0.2.0 (Vorzela v3)")
 	case "help", "--help", "-h":
 		usage()
 	default:
@@ -185,40 +185,88 @@ func cmdConfig(args []string) error {
 
 func cmdMake(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: vorm make migration <posts|post_user|…>")
+		return fmt.Errorf("%s", makeUsage)
 	}
-	switch args[0] {
+	kind := scaffold.NormalizeRelationKind(args[0])
+	rest := args[1:]
+	if kind == "relation" {
+		if len(rest) == 0 {
+			return fmt.Errorf("%s", makeUsage)
+		}
+		kind = scaffold.NormalizeRelationKind(rest[0])
+		rest = rest[1:]
+	}
+
+	switch kind {
 	case "migration":
-		if len(args) < 2 {
+		if len(rest) < 1 {
 			return fmt.Errorf("usage: vorm make migration posts | vorm make migration post_user")
 		}
-		cfg, err := config.Load(".")
-		if err != nil {
-			return err
-		}
-		res, err := scaffold.MakeMigration(args[1], scaffold.MigrationDirs{
-			Dir:     cfg.MigrationPath,
-			Dialect: resolveDialect(cfg),
-		})
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(os.Stderr, "vorm: wrote %s\n", res.MigrationFile)
-		fmt.Fprintf(os.Stderr, "vorm: next → edit Up/Down in that file → vorm migrate → vorm generate\n")
-		return nil
+		return writeMakeMigration(rest[0])
 	case "enum":
-		if len(args) < 3 {
+		if len(rest) < 2 {
 			return fmt.Errorf("usage: vorm make enum <type_name> value1,value2,...")
 		}
-		return makeFacade().CreateEnum(args[1], splitCSV(args[2])...)
+		return makeFacade().CreateEnum(rest[0], splitCSV(rest[1])...)
 	case "extension":
-		if len(args) < 2 {
+		if len(rest) < 1 {
 			return fmt.Errorf("usage: vorm make extension <name>")
 		}
-		return makeFacade().CreateExtension(args[1])
+		return makeFacade().CreateExtension(rest[0])
+	case "belongs-to", "has-one", "has-many", "belongs-to-many", "morphs", "morph-to-many":
+		return writeMakeRelation(kind, rest)
 	default:
-		return fmt.Errorf("unknown make target %q — try: vorm make migration posts", args[0])
+		return fmt.Errorf("unknown make target %q\n%s", args[0], makeUsage)
 	}
+}
+
+const makeUsage = `usage: vorm make <target> …
+
+  vorm make migration <posts|post_user|add_slug_to_posts>
+  vorm make belongs-to <child> <parent> [column]
+  vorm make has-one <parent> <child> [column]
+  vorm make has-many <parent> <child> [column]
+  vorm make belongs-to-many <left> <right>
+  vorm make morphs <child> <name>
+  vorm make morph-to-many <related> <morph>
+  vorm make enum <type> value1,value2
+  vorm make extension <name>`
+
+func writeMakeMigration(name string) error {
+	cfg, err := config.Load(".")
+	if err != nil {
+		return err
+	}
+	res, err := scaffold.MakeMigration(name, scaffold.MigrationDirs{
+		Dir:     cfg.MigrationPath,
+		Dialect: resolveDialect(cfg),
+	})
+	if err != nil {
+		return err
+	}
+	printMakeResult(res)
+	return nil
+}
+
+func writeMakeRelation(kind string, args []string) error {
+	cfg, err := config.Load(".")
+	if err != nil {
+		return err
+	}
+	res, err := scaffold.MakeRelation(kind, args, scaffold.MigrationDirs{
+		Dir:     cfg.MigrationPath,
+		Dialect: resolveDialect(cfg),
+	})
+	if err != nil {
+		return err
+	}
+	printMakeResult(res)
+	return nil
+}
+
+func printMakeResult(res *scaffold.MakeResult) {
+	fmt.Fprintf(os.Stderr, "vorm: wrote %s\n", res.MigrationFile)
+	fmt.Fprintf(os.Stderr, "vorm: next → edit Up/Down in that file → vorm migrate → vorm generate\n")
 }
 
 // resolveDialect prefers the project config, then the connection string.
@@ -393,6 +441,12 @@ Setup:
 
 Migrations:
   vorm make migration posts         # timestamped Blueprint Up/Down in migrations/
+  vorm make belongs-to posts users  # alter: t.BelongsTo("user_id", "users")
+  vorm make has-one users profiles  # unique FK on the child
+  vorm make has-many users posts    # FK on the child (same as belongs-to)
+  vorm make belongs-to-many posts tags
+  vorm make morphs comments commentable
+  vorm make morph-to-many tags taggable
   vorm migrate [--dry-run] [--steps=N]
   vorm rollback [--steps=1] [--migration=name] [--all]
   vorm status

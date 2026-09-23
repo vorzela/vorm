@@ -24,6 +24,28 @@ type ModelSpec struct {
 	Fields      []FieldSpec // db column order for Scan
 	SoftDeletes bool
 	PrimaryKey  string
+	Relations   []RelSpec
+}
+
+// RelSpec is association metadata parsed from generated RegisterRelation calls.
+type RelSpec struct {
+	Name            string
+	Kind            query.RelationKind
+	Table           string
+	Field           string
+	LocalKey        string
+	ForeignKey      string
+	PivotTable      string
+	PivotLocalKey   string
+	PivotForeignKey string
+	MorphType       string
+	MorphTypeColumn string
+}
+
+// RelSubselect is WithCount / WithExists on a named relation.
+type RelSubselect struct {
+	Name  string
+	Count bool
 }
 
 // FieldSpec is one scanned field.
@@ -65,17 +87,24 @@ type StubFunc struct {
 
 	// WithTrashed drops the soft-delete filter for this query.
 	WithTrashed bool
+	OnlyTrashed bool
 	// Relations requested via .With(...); they need model structs, so their
 	// presence keeps a stub on the runtime builder.
 	Relations []string
 
-	CreateVals []KVSpec
-	UpdateVals []KVSpec
-	SoftIDExpr string // SoftDelete/ForceDelete id expr
+	CreateVals    []KVSpec
+	UpdateVals    []KVSpec
+	SoftIDExpr    string // SoftDelete/ForceDelete id expr
+	AmountExpr    string // Increment/Decrement amount
+	RelSubselects []RelSubselect
 
 	// Pagination arguments for the Paginate/OffsetPage terminal.
 	PageExpr    string
 	PerPageExpr string
+	PageStyle   string // offset, simple, cursor
+	CursorExpr  string
+	CursorCol   string
+	CursorDesc  bool
 
 	Pending    bool // body too complex to lower
 	PendingWhy string
@@ -103,6 +132,12 @@ const (
 	WhereSearch WhereKind = "search"
 	// WhereRaw is a caller-supplied fragment with bound arguments.
 	WhereRaw WhereKind = "raw"
+	// WhereExists is a correlated EXISTS / NOT EXISTS against a named relation.
+	WhereExists WhereKind = "exists"
+	// WhereFTS is WhereFullText (tsquery / MATCH AGAINST).
+	WhereFTS WhereKind = "fts"
+	// WhereJSON is WhereJsonContains.
+	WhereJSON WhereKind = "json"
 )
 
 type WhereSpec struct {
@@ -113,6 +148,8 @@ type WhereSpec struct {
 	Args    []string // IN list values / raw fragment arguments
 	Cols    []string // search columns
 	Raw     string   // raw SQL fragment
+	RelName string   // WhereHas / WhereRelation
+	Not     bool     // WhereDoesntHave
 	Or      bool     // joined with OR instead of AND
 	Negated bool     // NOT IN
 }
@@ -284,7 +321,140 @@ func parseModelsDir(dir string) (map[string]ModelSpec, error) {
 		}
 		return nil
 	})
-	return out, err
+	if err != nil {
+		return out, err
+	}
+	attachModelRelations(files, out)
+	return out, nil
+}
+
+func attachModelRelations(files map[string]*ast.File, models map[string]ModelSpec) {
+	byType := map[string][]RelSpec{}
+	for _, f := range files {
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok || !isSelector(call.Fun, "query", "RegisterRelation") || len(call.Args) < 2 {
+				return true
+			}
+			rel, ok := parseRelationLit(call.Args[0])
+			if !ok || rel.Name == "" {
+				return true
+			}
+			owner := ownerTypeFromLoader(call.Args[1])
+			if owner == "" {
+				return true
+			}
+			byType[owner] = append(byType[owner], rel)
+			return true
+		})
+	}
+	for k, ms := range models {
+		if rs, ok := byType[ms.TypeName]; ok {
+			ms.Relations = rs
+			models[k] = ms
+		}
+	}
+}
+
+func parseRelationLit(expr ast.Expr) (RelSpec, bool) {
+	cl, ok := expr.(*ast.CompositeLit)
+	if !ok {
+		return RelSpec{}, false
+	}
+	var r RelSpec
+	for _, elt := range cl.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		switch exprString(kv.Key) {
+		case "Name":
+			r.Name, _ = litString(kv.Value)
+		case "Kind":
+			r.Kind = parseRelationKind(kv.Value)
+		case "Table":
+			r.Table, _ = litString(kv.Value)
+		case "Field":
+			r.Field, _ = litString(kv.Value)
+		case "LocalKey":
+			r.LocalKey, _ = litString(kv.Value)
+		case "ForeignKey":
+			r.ForeignKey, _ = litString(kv.Value)
+		case "PivotTable":
+			r.PivotTable, _ = litString(kv.Value)
+		case "PivotLocalKey":
+			r.PivotLocalKey, _ = litString(kv.Value)
+		case "PivotForeignKey":
+			r.PivotForeignKey, _ = litString(kv.Value)
+		case "MorphType":
+			r.MorphType, _ = litString(kv.Value)
+		case "MorphTypeColumn":
+			r.MorphTypeColumn, _ = litString(kv.Value)
+		}
+	}
+	return r, r.Name != "" && r.Table != ""
+}
+
+func parseRelationKind(expr ast.Expr) query.RelationKind {
+	s := exprString(expr)
+	if i := strings.LastIndex(s, "."); i >= 0 {
+		s = s[i+1:]
+	}
+	switch s {
+	case "RelationBelongsTo":
+		return query.RelationBelongsTo
+	case "RelationHasOne":
+		return query.RelationHasOne
+	case "RelationHasMany":
+		return query.RelationHasMany
+	case "RelationBelongsToMany":
+		return query.RelationBelongsToMany
+	case "RelationMorphTo":
+		return query.RelationMorphTo
+	case "RelationMorphMany":
+		return query.RelationMorphMany
+	case "RelationHasManyThrough":
+		return query.RelationHasManyThrough
+	case "RelationHasOneOfMany":
+		return query.RelationHasOneOfMany
+	case "RelationMorphToMany":
+		return query.RelationMorphToMany
+	default:
+		return query.RelationKind(strings.TrimPrefix(s, "Relation"))
+	}
+}
+
+func ownerTypeFromLoader(expr ast.Expr) string {
+	fl, ok := expr.(*ast.FuncLit)
+	if !ok || fl.Type == nil || fl.Type.Params == nil || len(fl.Type.Params.List) == 0 {
+		return ""
+	}
+	last := fl.Type.Params.List[len(fl.Type.Params.List)-1].Type
+	return elemIdentName(last)
+}
+
+func elemIdentName(expr ast.Expr) string {
+	switch v := expr.(type) {
+	case *ast.Ident:
+		return v.Name
+	case *ast.StarExpr:
+		return elemIdentName(v.X)
+	case *ast.ArrayType:
+		return elemIdentName(v.Elt)
+	case *ast.SelectorExpr:
+		return v.Sel.Name
+	default:
+		return ""
+	}
+}
+
+func (ms ModelSpec) relation(name string) (RelSpec, bool) {
+	for _, r := range ms.Relations {
+		if r.Name == name {
+			return r, true
+		}
+	}
+	return RelSpec{}, false
 }
 
 func parseModelCall(call *ast.CallExpr, consts *pkgConsts) (typeName string, meta query.Meta, ok bool) {
@@ -541,20 +711,54 @@ func lowerCallChain(call *ast.CallExpr, st *StubFunc, models map[string]ModelSpe
 		return lowerFindByID(call, sel.X, st, models)
 	case "OffsetPage":
 		st.Action = "Paginate"
+		st.PageStyle = "offset"
 		if len(call.Args) >= 4 {
 			st.PageExpr = exprString(call.Args[2])
 			st.PerPageExpr = exprString(call.Args[3])
 		}
 		return lowerBuilderChain(sel.X, st, models)
+	case "SimplePaginate":
+		st.Action = "Paginate"
+		st.PageStyle = "simple"
+		if len(call.Args) >= 4 {
+			st.PageExpr = exprString(call.Args[2])
+			st.PerPageExpr = exprString(call.Args[3])
+		}
+		return lowerBuilderChain(sel.X, st, models)
+	case "CursorPaginate":
+		st.Action = "Paginate"
+		st.PageStyle = "cursor"
+		if len(call.Args) >= 4 {
+			st.CursorExpr = exprString(call.Args[2])
+			st.PerPageExpr = exprString(call.Args[3])
+		}
+		return lowerBuilderChain(sel.X, st, models)
+	case "CursorPage":
+		st.Action = "Paginate"
+		st.PageStyle = "cursor"
+		if len(call.Args) >= 4 {
+			st.CursorExpr = exprString(call.Args[2])
+			st.PerPageExpr = exprString(call.Args[3])
+		}
+		if len(call.Args) >= 5 {
+			if s, ok := litString(call.Args[4]); ok {
+				st.CursorCol = s
+			} else {
+				st.PendingWhy = "CursorPage OrderBy needs a literal column"
+				return false
+			}
+		}
+		if len(call.Args) >= 6 {
+			st.CursorDesc = exprString(call.Args[5]) == "true"
+		}
+		return lowerBuilderChain(sel.X, st, models)
 	case "Paginate":
 		st.Action = "Paginate"
 		if len(call.Args) >= 3 {
-			page, perPage, ok := parsePageRequest(call.Args[2])
-			if !ok {
-				st.PendingWhy = "Paginate needs a query.PageRequest literal (cursor pages stay on the builder)"
+			if !parsePageRequest(call.Args[2], st) {
+				st.PendingWhy = "Paginate needs a query.PageRequest literal"
 				return false
 			}
-			st.PageExpr, st.PerPageExpr = page, perPage
 		}
 		return lowerBuilderChain(sel.X, st, models)
 	case "Create":
@@ -578,19 +782,57 @@ func lowerCallChain(call *ast.CallExpr, st *StubFunc, models map[string]ModelSpe
 			return lowerEntityStart(sel.X, st, models)
 		}
 		return lowerBuilderChain(sel.X, st, models)
+	case "Pluck":
+		st.Action = "Pluck"
+		if len(call.Args) >= 3 {
+			if col, ok := litString(call.Args[2]); ok {
+				st.Selects = []string{col}
+			} else {
+				st.PendingWhy = "Pluck needs a literal column"
+				return false
+			}
+		}
+		return lowerBuilderChain(sel.X, st, models)
+	case "Sum", "Avg", "Min", "Max":
+		st.Action = action
+		if len(call.Args) >= 3 {
+			if col, ok := litString(call.Args[2]); ok {
+				st.Selects = []string{col}
+			} else {
+				st.PendingWhy = action + " needs a literal column"
+				return false
+			}
+		}
+		return lowerBuilderChain(sel.X, st, models)
+	case "Increment", "Decrement":
+		st.Action = action
+		if len(call.Args) >= 3 {
+			if col, ok := litString(call.Args[2]); ok {
+				st.Selects = []string{col}
+			} else {
+				st.PendingWhy = action + " needs a literal column"
+				return false
+			}
+			if len(call.Args) >= 4 {
+				st.AmountExpr = exprString(call.Args[3])
+			} else {
+				st.AmountExpr = "int64(1)"
+			}
+		}
+		return lowerBuilderChain(sel.X, st, models)
 	default:
 		st.PendingWhy = "terminal call " + action + " is runtime-only"
 		return false
 	}
 }
 
-// parsePageRequest pulls Page/PerPage out of a query.PageRequest literal.
-// Cursor pagination is stateful, so it stays on the runtime builder.
-func parsePageRequest(expr ast.Expr) (page, perPage string, ok bool) {
+// parsePageRequest pulls pagination fields out of a query.PageRequest literal.
+func parsePageRequest(expr ast.Expr, st *StubFunc) bool {
 	cl, isLit := expr.(*ast.CompositeLit)
 	if !isLit {
-		return "", "", false
+		return false
 	}
+	st.PageStyle = "offset"
 	for _, elt := range cl.Elts {
 		kv, isKV := elt.(*ast.KeyValueExpr)
 		if !isKV {
@@ -598,18 +840,32 @@ func parsePageRequest(expr ast.Expr) (page, perPage string, ok bool) {
 		}
 		switch exprString(kv.Key) {
 		case "Page":
-			page = exprString(kv.Value)
+			st.PageExpr = exprString(kv.Value)
 		case "PerPage":
-			perPage = exprString(kv.Value)
-		case "Cursor", "OrderBy", "Desc":
-			return "", "", false
+			st.PerPageExpr = exprString(kv.Value)
+		case "Cursor":
+			st.CursorExpr = exprString(kv.Value)
+		case "OrderBy":
+			if s, ok := litString(kv.Value); ok {
+				st.CursorCol = s
+			} else {
+				return false
+			}
+		case "Desc":
+			st.CursorDesc = exprString(kv.Value) == "true"
 		case "Style":
-			if strings.Contains(exprString(kv.Value), "Cursor") {
-				return "", "", false
+			v := exprString(kv.Value)
+			switch {
+			case strings.Contains(v, "Simple"):
+				st.PageStyle = "simple"
+			case strings.Contains(v, "Cursor"):
+				st.PageStyle = "cursor"
+			default:
+				st.PageStyle = "offset"
 			}
 		}
 	}
-	return page, perPage, true
+	return true
 }
 
 // lowerFindByID turns Users.FindByID(ctx, db, id) into First + WHERE pk = id,
@@ -794,6 +1050,81 @@ func lowerBuilderCall(name string, call *ast.CallExpr, st *StubFunc) bool {
 		st.Wheres = prependWhere(st.Wheres, w)
 		return true
 
+	case "WhereHas", "WhereDoesntHave":
+		if len(args) != 1 {
+			st.PendingWhy = name + " closures stay on the runtime builder"
+			return false
+		}
+		rel, ok := litString(args[0])
+		if !ok {
+			st.PendingWhy = name + " needs a literal relation name"
+			return false
+		}
+		st.Wheres = prependWhere(st.Wheres, WhereSpec{
+			Kind:    WhereExists,
+			RelName: rel,
+			Not:     name == "WhereDoesntHave",
+		})
+		return true
+
+	case "WhereRelation":
+		if len(args) < 2 {
+			st.PendingWhy = "WhereRelation needs a relation and a predicate"
+			return false
+		}
+		rel, ok := litString(args[0])
+		if !ok {
+			st.PendingWhy = "WhereRelation needs a literal relation name"
+			return false
+		}
+		extra, ok := parseWhereCall(args[1:])
+		if !ok {
+			st.PendingWhy = "WhereRelation predicate must be a literal column form"
+			return false
+		}
+		extra.Kind = WhereExists
+		extra.RelName = rel
+		st.Wheres = prependWhere(st.Wheres, extra)
+		return true
+
+	case "WithCount", "WithExists":
+		if len(args) == 0 {
+			return false
+		}
+		for _, a := range args {
+			rel, ok := litString(a)
+			if !ok {
+				st.PendingWhy = name + " needs literal relation names"
+				return false
+			}
+			st.RelSubselects = append(st.RelSubselects, RelSubselect{Name: rel, Count: name == "WithCount"})
+		}
+		return true
+
+	case "WhereFullText":
+		if len(args) != 2 {
+			return false
+		}
+		col, ok := litString(args[0])
+		if !ok {
+			st.PendingWhy = "WhereFullText needs a literal column"
+			return false
+		}
+		st.Wheres = prependWhere(st.Wheres, WhereSpec{Kind: WhereFTS, Col: col, ArgExpr: exprString(args[1])})
+		return true
+
+	case "WhereJsonContains":
+		if len(args) != 2 {
+			return false
+		}
+		col, ok := litString(args[0])
+		if !ok {
+			st.PendingWhy = "WhereJsonContains needs a literal column"
+			return false
+		}
+		st.Wheres = prependWhere(st.Wheres, WhereSpec{Kind: WhereJSON, Col: col, ArgExpr: exprString(args[1])})
+		return true
+
 	case "OrderBy", "OrderByDesc":
 		if len(args) < 1 {
 			return false
@@ -897,6 +1228,9 @@ func lowerBuilderCall(name string, call *ast.CallExpr, st *StubFunc) bool {
 
 	case "WithTrashed":
 		st.WithTrashed = true
+		return true
+	case "OnlyTrashed":
+		st.OnlyTrashed = true
 		return true
 
 	case "LockForUpdate", "ForUpdate":

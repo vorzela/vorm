@@ -4,6 +4,7 @@ import (
 	"go/format"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -92,28 +93,111 @@ func Run(opts *Options) (*Result, error) {
 		Driver:    driver,
 		Pending:   pendingStubs(stubs),
 	}
-	if len(stubs) == 0 {
-		return res, nil
-	}
 
-	body, err := emitQueries(opts, stubs, models)
-	if err != nil {
+	keep := map[string]bool{}
+	if len(stubs) > 0 {
+		dbName := "db.go"
+		dbPath := filepath.Join(opts.OutDir, dbName)
+		if err := writeQueryGo(dbPath, emitDBFile(opts)); err != nil {
+			return nil, err
+		}
+		keep[dbName] = true
+		res.GoFiles = append(res.GoFiles, dbPath)
+
+		for _, g := range groupStubsBySource(opts.QueryDir, stubs) {
+			body, err := emitQueryFile(opts, g.Stubs, models)
+			if err != nil {
+				return nil, err
+			}
+			path := filepath.Join(opts.OutDir, g.Name)
+			if err := writeQueryGo(path, body); err != nil {
+				return nil, err
+			}
+			keep[g.Name] = true
+			res.GoFiles = append(res.GoFiles, path)
+		}
+	}
+	if err := pruneGoFiles(opts.OutDir, keep); err != nil {
 		return nil, err
 	}
+	return res, nil
+}
 
+func writeQueryGo(path, body string) error {
 	src, err := format.Source([]byte(body))
 	if err != nil {
 		// Keep the unformatted source on disk: the compiler error points at the
 		// generator bug far better than a format error does.
 		src = []byte(body)
 	}
+	return os.WriteFile(path, src, 0o644)
+}
 
-	goFile := filepath.Join(opts.OutDir, "queries_gen.go")
-	if err := os.WriteFile(goFile, src, 0o644); err != nil {
-		return nil, err
+type stubGroup struct {
+	Name  string
+	Stubs []StubFunc
+}
+
+// groupStubsBySource buckets stubs into one output file per source, sqlc-style.
+func groupStubsBySource(queryDir string, stubs []StubFunc) []stubGroup {
+	order := make([]string, 0)
+	byName := map[string][]StubFunc{}
+	for _, s := range stubs {
+		name := queryGoFileName(queryDir, s.File)
+		if _, ok := byName[name]; !ok {
+			order = append(order, name)
+		}
+		byName[name] = append(byName[name], s)
 	}
-	res.GoFiles = append(res.GoFiles, goFile)
-	return res, nil
+	sort.Strings(order)
+	out := make([]stubGroup, 0, len(order))
+	for _, name := range order {
+		out = append(out, stubGroup{Name: name, Stubs: byName[name]})
+	}
+	return out
+}
+
+// queryGoFileName maps a stub source path to an output name:
+//
+//	queries/users.go       → users.sql.go
+//	queries/admin/users.go → admin_users.sql.go
+func queryGoFileName(queryDir, stubFile string) string {
+	rel := stubFile
+	if queryDir != "" {
+		if r, err := filepath.Rel(queryDir, stubFile); err == nil && r != "." && !strings.HasPrefix(r, "..") {
+			rel = r
+		} else {
+			rel = filepath.Base(stubFile)
+		}
+	}
+	rel = strings.TrimSuffix(filepath.ToSlash(rel), ".go")
+	rel = strings.ReplaceAll(rel, "/", "_")
+	if rel == "" || rel == "." {
+		rel = "queries"
+	}
+	return rel + ".sql.go"
+}
+
+func pruneGoFiles(dir string, keep map[string]bool) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
+			continue
+		}
+		if keep[e.Name()] {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func pendingStubs(stubs []StubFunc) []PendingStub {

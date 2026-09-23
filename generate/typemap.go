@@ -126,7 +126,10 @@ func (m *TypeMapper) postgresType(t string) GoType {
 		return GoType{Name: "string"}
 	case "text", "varchar", "character varying", "char", "character", "bpchar",
 		"name", "citext", "uuid", "inet", "cidr", "macaddr", "macaddr8",
-		"tsvector", "tsquery", "xml", "ltree":
+		"tsvector", "tsquery", "xml", "ltree",
+		"geometry", "geography":
+		// PostGIS values arrive as text (EWKB hex). string scans on pgx and pq
+		// without an extra geometry library.
 		return GoType{Name: "string"}
 	case "json", "jsonb":
 		return GoType{Name: "json.RawMessage", Import: "encoding/json", Nilable: true}

@@ -14,12 +14,15 @@ import (
 type RelationKind string
 
 const (
-	RelationBelongsTo     RelationKind = "belongs_to"
-	RelationHasOne        RelationKind = "has_one"
-	RelationHasMany       RelationKind = "has_many"
-	RelationBelongsToMany RelationKind = "belongs_to_many"
-	RelationMorphTo       RelationKind = "morph_to"
-	RelationMorphMany     RelationKind = "morph_many"
+	RelationBelongsTo      RelationKind = "belongs_to"
+	RelationHasOne         RelationKind = "has_one"
+	RelationHasMany        RelationKind = "has_many"
+	RelationBelongsToMany  RelationKind = "belongs_to_many"
+	RelationMorphTo        RelationKind = "morph_to"
+	RelationMorphMany      RelationKind = "morph_many"
+	RelationHasManyThrough RelationKind = "has_many_through"
+	RelationHasOneOfMany   RelationKind = "has_one_of_many"
+	RelationMorphToMany    RelationKind = "morph_to_many"
 )
 
 // Relation is the descriptive metadata for an association. Generated model code
@@ -34,7 +37,11 @@ type Relation struct {
 	PivotTable      string
 	PivotLocalKey   string
 	PivotForeignKey string
-	MorphType       string // morphMany: value stored in {name}_type (usually the parent table)
+	MorphType       string // morphMany / morphToMany: value stored in type column (table name)
+	MorphTypeColumn string // {name}_type on the child or pivot
+	// hasManyThrough: PivotTable is the intermediate table, PivotLocalKey is
+	// the FK from the through table to the parent, PivotForeignKey is the
+	// through table's PK used to join the far table (ForeignKey on the far table).
 }
 
 // Loader fills one relation for a batch of parents. Implementations must issue a
@@ -359,6 +366,8 @@ type BelongsToMany[P any, C any] struct {
 	ChildKey        func(*C) any
 	Assign          func(*P, []C)
 	Modify          func(*Builder[C]) *Builder[C]
+	MorphType       string
+	MorphTypeColumn string
 }
 
 // LoadBelongsToMany resolves a many-to-many relation through a pivot table.
@@ -378,7 +387,7 @@ func LoadBelongsToMany[P any, C any](ctx context.Context, db DB, parents []*P, o
 		return nil
 	}
 
-	links, err := loadPivotLinks(ctx, db, DefaultDialect(), opts.PivotTable, opts.PivotParentKey, opts.PivotRelatedKey, parentKeys)
+	links, err := loadPivotLinks(ctx, db, opts.Related.New().dialect, opts.PivotTable, opts.PivotParentKey, opts.PivotRelatedKey, parentKeys, opts.MorphTypeColumn, opts.MorphType)
 	if err != nil {
 		return err
 	}
@@ -428,7 +437,7 @@ type pivotLink struct {
 	related any
 }
 
-func loadPivotLinks(ctx context.Context, db DB, dialect Dialect, table, parentCol, relatedCol string, parentKeys []any) ([]pivotLink, error) {
+func loadPivotLinks(ctx context.Context, db DB, dialect Dialect, table, parentCol, relatedCol string, parentKeys []any, typeCol, typeVal string) ([]pivotLink, error) {
 	for _, ident := range []string{table, parentCol, relatedCol} {
 		if err := SafeIdent(ident); err != nil {
 			return nil, err
@@ -457,11 +466,27 @@ func loadPivotLinks(ctx context.Context, db DB, dialect Dialect, table, parentCo
 	}
 	sqlText := fmt.Sprintf("SELECT %s, %s FROM %s WHERE %s IN (%s)",
 		parentQ, relatedQ, tableQ, parentQ, joinComma(holders))
+	args := append([]any{}, parentKeys...)
+	if typeCol != "" && typeVal != "" {
+		if err := SafeIdent(typeCol); err != nil {
+			return nil, err
+		}
+		typeQ, err := QuoteIdent(dialect, typeCol)
+		if err != nil {
+			return nil, err
+		}
+		ph := fmt.Sprintf("$%d", len(args)+1)
+		if dialect == DialectMySQL {
+			ph = "?"
+		}
+		sqlText += fmt.Sprintf(" AND %s = %s", typeQ, ph)
+		args = append(args, typeVal)
+	}
 
-	obs := observe(ctx, "select", table, sqlText, parentKeys)
-	rows, err := db.QueryContext(ctx, sqlText, parentKeys...)
+	obs := observe(ctx, "select", table, sqlText, args)
+	rows, err := db.QueryContext(ctx, sqlText, args...)
 	if err != nil {
-		return nil, obs.done(ctx, 0, wrapErr("select", table, sqlText, len(parentKeys), err))
+		return nil, obs.done(ctx, 0, wrapErr("select", table, sqlText, len(args), err))
 	}
 	defer rows.Close()
 

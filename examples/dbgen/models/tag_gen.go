@@ -4,6 +4,8 @@
 package models
 
 import (
+	"context"
+
 	"github.com/vorzela/vorm/query"
 )
 
@@ -13,7 +15,9 @@ type Tag struct {
 	Name string `json:"name" db:"name"`
 
 	// Relations — populated by .With(...); never selected or written.
-	Posts []Post `json:"posts,omitempty" db:"-"`
+	Posts       []Post `json:"posts,omitempty" db:"-"`
+	PostsCount  int64  `json:"posts_count" db:"posts_count"`
+	PostsExists bool   `json:"posts_exists" db:"posts_exists"`
 }
 
 // TagTable is the table name for Tag.
@@ -38,3 +42,51 @@ var Tags = query.Model[Tag](query.Meta{
 	PrimaryKey:  "id",
 	SoftDeletes: false,
 })
+
+// Relations are registered on package init so .With("name") resolves without
+// extra wiring. Every loader batches the whole result set into a bounded
+// number of queries — there is no per-row lookup.
+func init() {
+	query.RegisterRelation(query.Relation{
+		Name: "posts", Kind: query.RelationBelongsToMany, Table: "posts", Field: "Posts",
+		LocalKey: "id", ForeignKey: "",
+		PivotTable: "post_tags", PivotLocalKey: "tag_id", PivotForeignKey: "post_id",
+	}, func(ctx context.Context, db query.DB, rows []*Tag) error {
+		return query.LoadBelongsToMany(ctx, db, rows, query.BelongsToMany[Tag, Post]{
+			Related:         Posts,
+			PivotTable:      "post_tags",
+			PivotParentKey:  "tag_id",
+			PivotRelatedKey: "post_id",
+			RelatedKey:      "id",
+			ParentKey:       func(m *Tag) any { return m.ID },
+			ChildKey:        func(r *Post) any { return r.ID },
+			Assign:          func(m *Tag, rows []Post) { m.Posts = rows },
+		})
+	})
+
+}
+
+// PostsRelation is the belongs-to-many association (Attach/Detach/Sync/Toggle).
+// The eager-load field is named Posts; Go cannot share that identifier with a method.
+func (m *Tag) PostsRelation() query.BelongsToManyAssoc {
+	return query.BelongsToManyAssoc{
+		PivotTable: "post_tags", PivotParentKey: "tag_id", PivotRelatedKey: "post_id",
+		ParentID: m.ID, CreatedAt: true, UpdatedAt: false, UniquePair: true,
+	}
+}
+
+func (m *Tag) AttachPosts(ctx context.Context, db query.DB, ids ...any) error {
+	return m.PostsRelation().Attach(ctx, db, ids...)
+}
+
+func (m *Tag) DetachPosts(ctx context.Context, db query.DB, ids ...any) error {
+	return m.PostsRelation().Detach(ctx, db, ids...)
+}
+
+func (m *Tag) SyncPosts(ctx context.Context, db query.DB, ids ...any) error {
+	return m.PostsRelation().Sync(ctx, db, ids...)
+}
+
+func (m *Tag) TogglePosts(ctx context.Context, db query.DB, ids ...any) error {
+	return m.PostsRelation().Toggle(ctx, db, ids...)
+}

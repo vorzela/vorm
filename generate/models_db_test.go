@@ -45,6 +45,12 @@ func fixtureSchema() *introspect.Schema {
 				ReturnType: "void",
 			},
 			{
+				Name: "active_user_ids", Schema: "public", Language: "sql", Kind: "function",
+				Args:       []introspect.FunctionArg{{Name: "min_id", DBType: "int8", Mode: "IN"}},
+				ReturnType: "int8",
+				ReturnsSet: true,
+			},
+			{
 				Name: "audit_trigger", Schema: "public", Language: "plpgsql", Kind: "function",
 				ReturnType: "trigger",
 			},
@@ -108,6 +114,22 @@ func fixtureSchema() *introspect.Schema {
 				},
 			},
 			{
+				Name: "comments", Schema: "public", PrimaryKey: []string{"id"},
+				Columns: []introspect.Column{
+					col("id", "int8", 1, identity),
+					col("post_id", "int8", 2),
+					col("body", "text", 3, nullable),
+					col("created_at", "timestamptz", 4),
+				},
+				Indexes: []introspect.Index{
+					{Name: "comments_pkey", Columns: []string{"id"}, Unique: true, Primary: true, Method: "btree"},
+					{Name: "comments_post_id_idx", Columns: []string{"post_id"}, Method: "btree"},
+				},
+				ForeignKeys: []introspect.ForeignKey{
+					{Name: "comments_post_id_fkey", Columns: []string{"post_id"}, RefTable: "posts", RefColumns: []string{"id"}, OnDelete: "CASCADE"},
+				},
+			},
+			{
 				Name: "tags", Schema: "public", PrimaryKey: []string{"id"},
 				Columns: []introspect.Column{
 					col("id", "int8", 1, identity),
@@ -122,6 +144,10 @@ func fixtureSchema() *introspect.Schema {
 					col("tag_id", "int8", 3),
 					col("pinned", "bool", 4),
 					col("created_at", "timestamptz", 5),
+				},
+				Indexes: []introspect.Index{
+					{Name: "post_tags_pkey", Columns: []string{"id"}, Unique: true, Primary: true, Method: "btree"},
+					{Name: "post_tags_post_id_tag_id_key", Columns: []string{"post_id", "tag_id"}, Unique: true, Method: "btree"},
 				},
 				ForeignKeys: []introspect.ForeignKey{
 					{Name: "post_tags_post_id_fkey", Columns: []string{"post_id"}, RefTable: "posts", RefColumns: []string{"id"}},
@@ -155,6 +181,23 @@ func readGenerated(t *testing.T, dir, name string) string {
 		t.Fatalf("read %s: %v", name, err)
 	}
 	return string(b)
+}
+
+func readGeneratedDir(t *testing.T, dir string) string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
+			continue
+		}
+		b.WriteString(readGenerated(t, dir, e.Name()))
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 func TestModelsFromSchemaEmitsTypedStructs(t *testing.T) {
@@ -213,7 +256,10 @@ func TestModelsFromSchemaEmitsEnums(t *testing.T) {
 func TestModelsFromSchemaEmitsRelations(t *testing.T) {
 	dir := t.TempDir()
 	generateFixture(t, dir)
-	rels := readGenerated(t, dir, "relations_gen.go")
+	if _, err := os.Stat(filepath.Join(dir, "relations_gen.go")); !os.IsNotExist(err) {
+		t.Fatal("relations_gen.go must not be emitted; loaders belong on each table file")
+	}
+	rels := readGeneratedDir(t, dir)
 	user := readGenerated(t, dir, "user_gen.go")
 	post := readGenerated(t, dir, "post_gen.go")
 
@@ -223,7 +269,7 @@ func TestModelsFromSchemaEmitsRelations(t *testing.T) {
 		`Name: "editor", Kind: query.RelationBelongsTo`,
 	} {
 		if !strings.Contains(normalizeWS(rels), normalizeWS(w)) {
-			t.Errorf("relations_gen.go missing %q", w)
+			t.Errorf("user_gen.go missing %q", w)
 		}
 	}
 	// inverse sides are disambiguated because both FKs point at users
@@ -242,6 +288,9 @@ func TestModelsFromSchemaEmitsRelations(t *testing.T) {
 	if !strings.Contains(rels, "func (m *Post) TagsRelation()") || !strings.Contains(rels, "func (m *Post) AttachTags(") {
 		t.Errorf("belongs-to-many should emit Attach/Relation helpers\n%s", rels)
 	}
+	if !strings.Contains(rels, "CreatedAt: true, UpdatedAt: false, UniquePair: true") {
+		t.Errorf("pivot attach SQL must follow real columns and the unique pair\n%s", rels)
+	}
 	if !strings.Contains(rels, "query.LoadHasMany") || !strings.Contains(rels, "query.LoadBelongsTo") {
 		t.Error("relation loaders should use the batched helpers")
 	}
@@ -255,6 +304,21 @@ func TestModelsFromSchemaEmitsRelations(t *testing.T) {
 	if !strings.Contains(normalizeWS(post), "Author *User") {
 		t.Errorf("post model missing belongs-to field\n%s", post)
 	}
+	if !strings.Contains(rels, "query.LoadHasManyThrough") || !strings.Contains(rels, "query.RelationHasManyThrough") {
+		t.Errorf("hasManyThrough loader missing:\n%s", rels)
+	}
+	if !strings.Contains(rels, "query.LoadHasOneOfMany") || !strings.Contains(rels, "query.RelationHasOneOfMany") {
+		t.Errorf("hasOneOfMany loader missing:\n%s", rels)
+	}
+	if !strings.Contains(normalizeWS(user), "Comments []Comment") {
+		t.Errorf("user model missing hasManyThrough comments:\n%s", user)
+	}
+	if !strings.Contains(normalizeWS(user), "LatestAuthorPost *Post") || !strings.Contains(normalizeWS(user), "OldestAuthorPost *Post") {
+		t.Errorf("user model missing of-many fields:\n%s", user)
+	}
+	if !strings.Contains(user, "AuthorPostsCount") || !strings.Contains(user, `db:"author_posts_count"`) {
+		t.Errorf("withCount field missing:\n%s", user)
+	}
 }
 
 func TestModelsFromSchemaEmitsFunctions(t *testing.T) {
@@ -267,6 +331,12 @@ func TestModelsFromSchemaEmitsFunctions(t *testing.T) {
 	}
 	if !strings.Contains(normalizeWS(src), normalizeWS("func RefreshStats(ctx context.Context, db query.DB) error")) {
 		t.Errorf("void function should return only an error\n%s", src)
+	}
+	if !strings.Contains(src, `SELECT v FROM "active_user_ids"($1) AS t(v)`) {
+		t.Errorf("set-returning wrapper must not use SELECT *:\n%s", src)
+	}
+	if strings.Contains(src, "SELECT * FROM") {
+		t.Errorf("function wrappers must never emit SELECT *:\n%s", src)
 	}
 	if strings.Contains(src, "func AuditTrigger(") {
 		t.Error("trigger functions are not callable and must be skipped")
@@ -300,6 +370,42 @@ func TestModelsFromSchemaIsDeterministic(t *testing.T) {
 	for _, e := range entries {
 		if readGenerated(t, a, e.Name()) != readGenerated(t, b, e.Name()) {
 			t.Errorf("%s is not byte-identical across runs", e.Name())
+		}
+	}
+}
+
+func TestModelsFromSchemaPrunesStale(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "relations_gen.go"), []byte("package models\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "dropped_gen.go"), []byte("package models\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "handwritten.go"), []byte("package models\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	generateFixture(t, dir)
+	if _, err := os.Stat(filepath.Join(dir, "relations_gen.go")); !os.IsNotExist(err) {
+		t.Fatal("relations_gen.go should be removed")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "dropped_gen.go")); !os.IsNotExist(err) {
+		t.Fatal("dropped table file should be removed")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "handwritten.go")); err != nil {
+		t.Fatal("hand-written file must stay")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "user_gen.go")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGeographyMapsToString(t *testing.T) {
+	m := NewTypeMapper(query.DialectPostgres, nil, nil)
+	for _, dbType := range []string{"geography", "geometry", "GEOGRAPHY"} {
+		got := m.Resolve(introspect.Column{Name: "location", DBType: dbType})
+		if got.Name != "string" {
+			t.Errorf("%s → %q, want string", dbType, got.Name)
 		}
 	}
 }
@@ -371,6 +477,15 @@ func TestSingularPlural(t *testing.T) {
 	if got := Plural("box"); got != "boxes" {
 		t.Errorf("Plural(box) = %q", got)
 	}
+	if got := EntityName("users"); got != "Users" {
+		t.Errorf("EntityName(users) = %q", got)
+	}
+	if got := EntityName("post_tag"); got != "PostTags" {
+		t.Errorf("EntityName(post_tag) = %q, want PostTags (must not collide with type PostTag)", got)
+	}
+	if got := ModelName("post_tag"); got != "PostTag" {
+		t.Errorf("ModelName(post_tag) = %q", got)
+	}
 }
 
 func TestModelsFromSchemaMorphs(t *testing.T) {
@@ -405,7 +520,7 @@ func TestModelsFromSchemaMorphs(t *testing.T) {
 	if !strings.Contains(comment, "Commentable any") {
 		t.Errorf("morphTo field missing:\n%s", comment)
 	}
-	rels := readGenerated(t, dir, "relations_gen.go")
+	rels := readGeneratedDir(t, dir)
 	if !strings.Contains(rels, "query.RelationMorphTo") || !strings.Contains(rels, "query.LoadMorphTo") {
 		t.Errorf("morphTo loader missing:\n%s", rels)
 	}
@@ -413,8 +528,136 @@ func TestModelsFromSchemaMorphs(t *testing.T) {
 		t.Errorf("morphMany loader missing:\n%s", rels)
 	}
 	post := readGenerated(t, dir, "post_gen.go")
-	if !strings.Contains(post, "Comments []Comment") {
+	if !strings.Contains(normalizeWS(post), "Comments []Comment") {
 		t.Errorf("morphMany field missing:\n%s", post)
+	}
+	if !strings.Contains(rels, `return b.Where("commentable_type", "posts")`) {
+		t.Errorf("morphMany must bind the owner table name:\n%s", rels)
+	}
+	if !strings.Contains(rels, `"posts": query.MorphLoad(Posts,`) {
+		t.Errorf("morphTo targets are table names:\n%s", rels)
+	}
+}
+
+func TestModelsFromSchemaMorphToMany(t *testing.T) {
+	col := func(name, dbType string, pos int) introspect.Column {
+		return introspect.Column{Name: name, DBType: dbType, FullType: dbType, Position: pos}
+	}
+	s := &introspect.Schema{
+		Dialect: query.DialectPostgres,
+		Tables: []introspect.Table{
+			{Name: "posts", PrimaryKey: []string{"id"}, Columns: []introspect.Column{col("id", "int8", 1), col("title", "varchar", 2)}},
+			{Name: "tags", PrimaryKey: []string{"id"}, Columns: []introspect.Column{col("id", "int8", 1), col("name", "varchar", 2)}},
+			{
+				Name: "taggables", PrimaryKey: []string{"id"},
+				Columns: []introspect.Column{
+					col("id", "int8", 1),
+					col("tag_id", "int8", 2),
+					col("taggable_id", "int8", 3),
+					col("taggable_type", "varchar", 4),
+				},
+				ForeignKeys: []introspect.ForeignKey{
+					{Columns: []string{"tag_id"}, RefTable: "tags", RefColumns: []string{"id"}},
+				},
+			},
+		},
+	}
+	dir := t.TempDir()
+	if _, err := ModelsFromSchema(SchemaOptions{
+		Schema: s, ModelDir: dir, Package: "models", Dialect: query.DialectPostgres, EmitRelations: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rels := readGeneratedDir(t, dir)
+	if !strings.Contains(rels, "query.RelationMorphToMany") {
+		t.Errorf("morphToMany missing:\n%s", rels)
+	}
+	if !strings.Contains(rels, `MorphType: "posts"`) || !strings.Contains(rels, `MorphTypeColumn: "taggable_type"`) {
+		t.Errorf("morph type column missing:\n%s", rels)
+	}
+	post := readGenerated(t, dir, "post_gen.go")
+	if !strings.Contains(normalizeWS(post), "Tags []Tag") {
+		t.Errorf("post missing morphToMany tags:\n%s", post)
+	}
+	if !strings.Contains(rels, "func (m *Post) TagsRelation()") {
+		t.Errorf("morphToMany should emit Attach helpers:\n%s", rels)
+	}
+}
+
+func TestPartialUniqueIndexDoesNotSetUniquePair(t *testing.T) {
+	col := func(name, dbType string, pos int) introspect.Column {
+		return introspect.Column{Name: name, DBType: dbType, FullType: dbType, Position: pos}
+	}
+	s := &introspect.Schema{
+		Dialect: query.DialectPostgres,
+		Tables: []introspect.Table{
+			{Name: "posts", PrimaryKey: []string{"id"}, Columns: []introspect.Column{col("id", "int8", 1)}},
+			{Name: "tags", PrimaryKey: []string{"id"}, Columns: []introspect.Column{col("id", "int8", 1)}},
+			{
+				Name: "post_tags", PrimaryKey: []string{"id"},
+				Columns: []introspect.Column{
+					col("id", "int8", 1), col("post_id", "int8", 2), col("tag_id", "int8", 3),
+				},
+				Indexes: []introspect.Index{
+					{Name: "post_tags_pkey", Columns: []string{"id"}, Unique: true, Primary: true},
+					{Name: "post_tags_pair", Columns: []string{"post_id", "tag_id"}, Unique: true, Partial: true, Predicate: "(pinned)"},
+				},
+				ForeignKeys: []introspect.ForeignKey{
+					{Columns: []string{"post_id"}, RefTable: "posts", RefColumns: []string{"id"}},
+					{Columns: []string{"tag_id"}, RefTable: "tags", RefColumns: []string{"id"}},
+				},
+			},
+		},
+	}
+	dir := t.TempDir()
+	if _, err := ModelsFromSchema(SchemaOptions{
+		Schema: s, ModelDir: dir, Package: "models", Dialect: query.DialectPostgres, EmitRelations: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rels := readGeneratedDir(t, dir)
+	if !strings.Contains(rels, "UniquePair: false") {
+		t.Errorf("partial unique must not emit ON CONFLICT:\n%s", rels)
+	}
+	if strings.Contains(rels, "UniquePair: true") {
+		t.Errorf("partial unique leaked UniquePair true:\n%s", rels)
+	}
+}
+
+func TestCompositePrimaryKeyIsUniquePair(t *testing.T) {
+	col := func(name, dbType string, pos int) introspect.Column {
+		return introspect.Column{Name: name, DBType: dbType, FullType: dbType, Position: pos}
+	}
+	s := &introspect.Schema{
+		Dialect: query.DialectPostgres,
+		Tables: []introspect.Table{
+			{Name: "posts", PrimaryKey: []string{"id"}, Columns: []introspect.Column{col("id", "int8", 1)}},
+			{Name: "tags", PrimaryKey: []string{"id"}, Columns: []introspect.Column{col("id", "int8", 1)}},
+			{
+				Name:       "post_tags",
+				PrimaryKey: []string{"post_id", "tag_id"},
+				Columns: []introspect.Column{
+					col("post_id", "int8", 1), col("tag_id", "int8", 2), col("pinned", "bool", 3),
+				},
+				ForeignKeys: []introspect.ForeignKey{
+					{Columns: []string{"post_id"}, RefTable: "posts", RefColumns: []string{"id"}},
+					{Columns: []string{"tag_id"}, RefTable: "tags", RefColumns: []string{"id"}},
+				},
+			},
+		},
+	}
+	dir := t.TempDir()
+	if _, err := ModelsFromSchema(SchemaOptions{
+		Schema: s, ModelDir: dir, Package: "models", Dialect: query.DialectPostgres, EmitRelations: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rels := readGeneratedDir(t, dir)
+	if !strings.Contains(rels, "query.RelationBelongsToMany") {
+		t.Errorf("extra pivot columns must still be many-to-many:\n%s", rels)
+	}
+	if !strings.Contains(rels, "UniquePair: true") {
+		t.Errorf("composite PK on the two FKs is a unique pair:\n%s", rels)
 	}
 }
 
@@ -465,6 +708,19 @@ func TestGeneratedExampleIsUpToDate(t *testing.T) {
 		got := readGenerated(t, dir, e.Name())
 		if string(want) != got {
 			t.Errorf("%s drifted from the committed example (run: go test ./generate -update)", e.Name())
+		}
+	}
+	goldenEntries, err := os.ReadDir(goldenDir)
+	if err != nil {
+		t.Fatalf("%s missing (run: go test ./generate -update): %v", goldenDir, err)
+	}
+	gotNames := map[string]bool{}
+	for _, e := range entries {
+		gotNames[e.Name()] = true
+	}
+	for _, e := range goldenEntries {
+		if !gotNames[e.Name()] {
+			t.Errorf("%s is leftover in the committed example (run: go test ./generate -update)", e.Name())
 		}
 	}
 }

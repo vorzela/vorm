@@ -150,7 +150,7 @@ func functionCallSQL(dialect query.Dialect, fn introspect.Function, argc int) st
 	case strings.EqualFold(fn.Kind, "procedure"):
 		return "CALL " + call
 	case fn.ReturnsSet:
-		return "SELECT * FROM " + call
+		return "SELECT v FROM " + call + " AS t(v)"
 	default:
 		return "SELECT " + call
 	}

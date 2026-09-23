@@ -117,7 +117,10 @@ func GetUserByEmail(ctx context.Context, db query.DB, email string) (*User, erro
 	if res.Queries != 2 {
 		t.Fatalf("queries=%d", res.Queries)
 	}
-	body, err := os.ReadFile(filepath.Join(outdir, "queries_gen.go"))
+	if _, err := os.Stat(filepath.Join(outdir, "db.go")); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(outdir, "users.sql.go"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,5 +152,120 @@ func GetUserByEmail(ctx context.Context, db query.DB, email string) (*User, erro
 	}
 	if strings.Contains(s, "sqlc.yaml") || strings.Contains(s, "sqlc generate") {
 		t.Fatal("must not emit sqlc tooling")
+	}
+	dbBody, err := os.ReadFile(filepath.Join(outdir, "db.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(dbBody), `const GeneratedDialect = "postgres"`) {
+		t.Fatalf("db.go missing dialect const:\n%s", dbBody)
+	}
+	if strings.Contains(s, "const GeneratedDialect") {
+		t.Fatal("dialect consts belong in db.go, not the per-source query file")
+	}
+}
+
+func TestGenerateWritesPerSourceFilesAndPrunesStale(t *testing.T) {
+	root := t.TempDir()
+	qdir := filepath.Join(root, "queries")
+	mdir := filepath.Join(root, "models")
+	outdir := filepath.Join(root, "gen")
+	if err := os.MkdirAll(filepath.Join(qdir, "admin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(mdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(outdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	model := `package models
+
+import "github.com/vorzela/vorm/query"
+
+type User struct {
+	Email string ` + "`" + `json:"email" db:"email"` + "`" + `
+	Name  string ` + "`" + `json:"name" db:"name"` + "`" + `
+}
+
+var Users = query.Model[User](query.Meta{
+	Table:   "users",
+	Columns: []string{"id", "email", "name"},
+})
+`
+	usersStub := `package queries
+
+import (
+	"context"
+
+	"github.com/vorzela/vorm/query"
+)
+
+// vorm:query name=ListUsers
+func ListUsers(ctx context.Context, db query.DB) ([]User, error) {
+	return Users.OrderBy("name").Get(ctx, db)
+}
+`
+	adminStub := `package queries
+
+import (
+	"context"
+
+	"github.com/vorzela/vorm/query"
+)
+
+// vorm:query name=AdminUser
+func AdminUser(ctx context.Context, db query.DB, email string) (*User, error) {
+	return Users.Where("email", email).First(ctx, db)
+}
+`
+	if err := os.WriteFile(filepath.Join(mdir, "user.go"), []byte(model), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(qdir, "users.go"), []byte(usersStub), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(qdir, "admin", "users.go"), []byte(adminStub), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outdir, "queries_gen.go"), []byte("package gen\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := generate.Run(&generate.Options{
+		QueryDir: qdir, OutDir: outdir, ModelDir: mdir,
+		Package: "gen", Dialect: "postgres", Driver: "pgx",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Queries != 2 {
+		t.Fatalf("queries=%d", res.Queries)
+	}
+	for _, name := range []string{"db.go", "users.sql.go", "admin_users.sql.go"} {
+		if _, err := os.Stat(filepath.Join(outdir, name)); err != nil {
+			t.Errorf("missing %s: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(outdir, "queries_gen.go")); !os.IsNotExist(err) {
+		t.Fatal("stale queries_gen.go should be pruned")
+	}
+	usersBody, err := os.ReadFile(filepath.Join(outdir, "users.sql.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminBody, err := os.ReadFile(filepath.Join(outdir, "admin_users.sql.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(usersBody), "func ListUsers(") {
+		t.Fatalf("users.sql.go missing ListUsers:\n%s", usersBody)
+	}
+	if strings.Contains(string(usersBody), "func AdminUser(") {
+		t.Fatal("users.sql.go should not contain the nested-dir query")
+	}
+	if !strings.Contains(string(adminBody), "func AdminUser(") {
+		t.Fatalf("admin_users.sql.go missing AdminUser:\n%s", adminBody)
 	}
 }

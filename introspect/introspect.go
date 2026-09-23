@@ -34,9 +34,17 @@ const DefaultSchemaName = "public"
 // fkNoAction is the SQL default referential action.
 const fkNoAction = "NO ACTION"
 
-// defaultExcludedTables are the vorm migration bookkeeping tables. They are
-// dropped from Schema.Tables unless the caller names them in IncludeTables.
-var defaultExcludedTables = []string{"migrations", "migrations_lock"}
+// defaultExcludedTables are bookkeeping tables, not application models. vorm's
+// migration tracker is always skipped. PostGIS installs spatial_ref_sys (and
+// the geography/geometry/raster catalogs) into public; those are extension
+// data, not tables the app authored. A caller can still name one in
+// IncludeTables.
+var defaultExcludedTables = []string{
+	"migrations", "migrations_lock",
+	"spatial_ref_sys",
+	"geography_columns", "geometry_columns",
+	"raster_columns", "raster_overviews",
+}
 
 var errNilDB = errors.New("vorm/introspect: nil database handle")
 

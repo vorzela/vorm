@@ -61,17 +61,20 @@ func ModelsFromSchema(opts SchemaOptions) (*ModelResult, error) {
 	fieldsByTable := resolveFields(tables, rels)
 
 	res := &ModelResult{}
+	written := map[string]bool{}
 	for _, t := range tables {
-		src, err := renderModel(opts, mapper, t, rels[t.Name], fieldsByTable[t.Name])
+		src, err := renderModel(opts, mapper, t, tables, rels[t.Name], fieldsByTable)
 		if err != nil {
 			return nil, err
 		}
-		path := filepath.Join(opts.ModelDir, FileName(t.Name))
+		name := FileName(t.Name)
+		path := filepath.Join(opts.ModelDir, name)
 		if err := writeGoFile(path, src); err != nil {
 			return nil, err
 		}
 		res.Tables = append(res.Tables, t.Name)
 		res.Files = append(res.Files, path)
+		written[name] = true
 	}
 
 	if len(opts.Schema.Enums) > 0 {
@@ -80,14 +83,7 @@ func ModelsFromSchema(opts SchemaOptions) (*ModelResult, error) {
 			return nil, err
 		}
 		res.Files = append(res.Files, path)
-	}
-
-	if opts.EmitRelations && anyRelations(rels) {
-		path := filepath.Join(opts.ModelDir, "relations_gen.go")
-		if err := writeGoFile(path, renderRelations(opts, tables, rels, fieldsByTable)); err != nil {
-			return nil, err
-		}
-		res.Files = append(res.Files, path)
+		written["enums_gen.go"] = true
 	}
 
 	if opts.EmitFunctions && len(opts.Schema.Functions) > 0 {
@@ -98,6 +94,7 @@ func ModelsFromSchema(opts SchemaOptions) (*ModelResult, error) {
 				return nil, err
 			}
 			res.Files = append(res.Files, path)
+			written["functions_gen.go"] = true
 		}
 	}
 
@@ -106,6 +103,11 @@ func ModelsFromSchema(opts SchemaOptions) (*ModelResult, error) {
 		return nil, err
 	}
 	res.Files = append(res.Files, path)
+	written["vorm_gen.go"] = true
+
+	if err := pruneGeneratedModels(opts.ModelDir, written); err != nil {
+		return nil, err
+	}
 
 	return res, nil
 }
@@ -182,10 +184,36 @@ func (s importSet) block(extra ...string) string {
 	return b.String()
 }
 
-func renderModel(opts SchemaOptions, mapper *TypeMapper, t introspect.Table, rels []relPlan, fields map[string]string) (string, error) {
+func pruneGeneratedModels(dir string, keep map[string]bool) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), "_gen.go") {
+			continue
+		}
+		if keep[e.Name()] {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
+			return fmt.Errorf("vorm/generate: remove stale %s: %w", e.Name(), err)
+		}
+	}
+	return nil
+}
+
+func renderModel(opts SchemaOptions, mapper *TypeMapper, t introspect.Table, tables []introspect.Table, rels []relPlan, fieldsByTable map[string]map[string]string) (string, error) {
 	model := ModelName(t.Name)
 	entity := EntityName(t.Name)
+	fields := fieldsByTable[t.Name]
 	imports := importSet{"github.com/vorzela/vorm/query": true}
+	if opts.EmitRelations && len(rels) > 0 {
+		imports.add("context")
+	}
 
 	var fieldDecls, colConsts, colNames strings.Builder
 	cols := make([]string, 0, len(t.Columns))
@@ -219,12 +247,17 @@ func renderModel(opts SchemaOptions, mapper *TypeMapper, t introspect.Table, rel
 			switch r.Kind {
 			case query.RelationMorphTo:
 				goType = "any"
-			case query.RelationHasMany, query.RelationBelongsToMany, query.RelationMorphMany:
+			case query.RelationHasMany, query.RelationBelongsToMany, query.RelationMorphMany, query.RelationHasManyThrough, query.RelationMorphToMany:
 				goType = "[]" + ModelName(r.RelatedTable)
 			default:
 				goType = "*" + ModelName(r.RelatedTable)
 			}
 			fmt.Fprintf(&fieldDecls, "\t%s %s `json:\"%s,omitempty\" db:\"-\"`\n", r.Field, goType, r.Name)
+			switch r.Kind {
+			case query.RelationHasMany, query.RelationBelongsToMany, query.RelationMorphMany, query.RelationHasManyThrough, query.RelationMorphToMany:
+				fmt.Fprintf(&fieldDecls, "\t%s int64 `json:%q db:%q`\n", r.Field+"Count", r.Name+"_count", r.Name+"_count")
+				fmt.Fprintf(&fieldDecls, "\t%s bool `json:%q db:%q`\n", r.Field+"Exists", r.Name+"_exists", r.Name+"_exists")
+			}
 		}
 	}
 
@@ -279,6 +312,10 @@ func renderModel(opts SchemaOptions, mapper *TypeMapper, t introspect.Table, rel
 			b.WriteString("},\n")
 		}
 		b.WriteString("}\n")
+	}
+
+	if opts.EmitRelations && len(rels) > 0 {
+		b.WriteString(renderTableRelations(t, tables, rels, fieldsByTable))
 	}
 
 	return b.String(), nil

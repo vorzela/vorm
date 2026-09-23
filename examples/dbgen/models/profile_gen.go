@@ -4,6 +4,8 @@
 package models
 
 import (
+	"context"
+
 	"github.com/vorzela/vorm/query"
 )
 
@@ -46,4 +48,23 @@ var Profiles = query.Model[Profile](query.Meta{
 // ProfileIndexes mirrors the indexes that exist on "profiles".
 var ProfileIndexes = []query.IndexInfo{
 	{Name: "profiles_user_id_key", Columns: []string{"user_id"}, Unique: true, Primary: false, Method: "btree"},
+}
+
+// Relations are registered on package init so .With("name") resolves without
+// extra wiring. Every loader batches the whole result set into a bounded
+// number of queries — there is no per-row lookup.
+func init() {
+	query.RegisterRelation(query.Relation{
+		Name: "user", Kind: query.RelationBelongsTo, Table: "users", Field: "User",
+		LocalKey: "user_id", ForeignKey: "id",
+	}, func(ctx context.Context, db query.DB, rows []*Profile) error {
+		return query.LoadBelongsTo(ctx, db, rows, query.BelongsTo[Profile, User]{
+			Related:   Users,
+			OwnerKey:  "id",
+			ParentKey: func(m *Profile) any { return m.UserID },
+			ChildKey:  func(r *User) any { return r.ID },
+			Assign:    func(m *Profile, r *User) { m.User = r },
+		})
+	})
+
 }

@@ -11,23 +11,40 @@ import (
 	"github.com/vorzela/vorm/query"
 )
 
-func emitQueries(opts *Options, stubs []StubFunc, models map[string]ModelSpec) (string, error) {
+func emitDBFile(opts *Options) string {
 	dialect := strings.ToLower(opts.Dialect)
 	driver := strings.ToLower(opts.Driver)
 	if driver == "" {
 		driver = "pgx"
 	}
+	var extras strings.Builder
+	fmt.Fprintf(&extras, "const GeneratedDialect = %q\n", dialect)
+	fmt.Fprintf(&extras, "const GeneratedDriver = %q\n", driver)
+	return wrapGeneratedGo(opts, "", extras.String())
+}
 
-	qDialect := query.DialectPostgres
-	if dialect == "mysql" || dialect == "mariadb" {
-		qDialect = query.DialectMySQL
-	}
-
-	// The body is rendered first so the import list can reflect what it
-	// actually uses instead of guessing.
-	body, err := emitBody(stubs, models, qDialect)
+func emitQueryFile(opts *Options, stubs []StubFunc, models map[string]ModelSpec) (string, error) {
+	body, err := emitBody(stubs, models, queryDialectOf(opts.Dialect))
 	if err != nil {
 		return "", err
+	}
+	return wrapGeneratedGo(opts, body, ""), nil
+}
+
+func queryDialectOf(dialect string) query.Dialect {
+	if strings.ToLower(dialect) == "mysql" || strings.ToLower(dialect) == "mariadb" {
+		return query.DialectMySQL
+	}
+	return query.DialectPostgres
+}
+
+// wrapGeneratedGo adds the shared header, package clause and imports detected
+// from body. extras (db.go consts) are written after the import block.
+func wrapGeneratedGo(opts *Options, body, extras string) string {
+	dialect := strings.ToLower(opts.Dialect)
+	driver := strings.ToLower(opts.Driver)
+	if driver == "" {
+		driver = "pgx"
 	}
 
 	var b strings.Builder
@@ -48,18 +65,40 @@ func emitQueries(opts *Options, stubs []StubFunc, models map[string]ModelSpec) (
 	}
 	fmt.Fprintf(&b, "package %s\n\n", pkg)
 
-	imports := map[string]bool{
-		`"context"`:                       true,
-		`"github.com/vorzela/vorm/query"`: true,
+	if imports := detectQueryImports(opts, body); len(imports) > 0 {
+		writeImports(&b, imports)
+	}
+	if extras != "" {
+		b.WriteString(extras)
+		if !strings.HasSuffix(extras, "\n") {
+			b.WriteByte('\n')
+		}
+		b.WriteByte('\n')
+	}
+	b.WriteString(body)
+	return b.String()
+}
+
+func detectQueryImports(opts *Options, body string) map[string]bool {
+	if body == "" {
+		return nil
+	}
+	imports := map[string]bool{}
+	if strings.Contains(body, "context.") {
+		imports[`"context"`] = true
+	}
+	if strings.Contains(body, "query.") {
+		imports[`"github.com/vorzela/vorm/query"`] = true
 	}
 	modelPkg := opts.ModelPackage
 	if modelPkg == "" {
 		modelPkg = DefaultModelPkg
 	}
 	for pkg, used := range map[string]bool{
-		`"fmt"`:     strings.Contains(body, "fmt."),
-		`"strings"`: strings.Contains(body, "strings."),
-		`"time"`:    strings.Contains(body, "time."),
+		`"fmt"`:          strings.Contains(body, "fmt."),
+		`"strings"`:      strings.Contains(body, "strings."),
+		`"time"`:         strings.Contains(body, "time."),
+		`"database/sql"`: strings.Contains(body, "sql.NullFloat64"),
 		// Row structs reference generated enums (models.UserStatus).
 		strconv.Quote(opts.ModelImport): opts.ModelImport != "" && strings.Contains(body, modelPkg+"."),
 	} {
@@ -67,12 +106,7 @@ func emitQueries(opts *Options, stubs []StubFunc, models map[string]ModelSpec) (
 			imports[pkg] = true
 		}
 	}
-
-	writeImports(&b, imports)
-	fmt.Fprintf(&b, "const GeneratedDialect = %q\n", dialect)
-	fmt.Fprintf(&b, "const GeneratedDriver = %q\n\n", driver)
-	b.WriteString(body)
-	return b.String(), nil
+	return imports
 }
 
 // writeImports emits a goimports-style block: standard library first, then a
@@ -152,6 +186,12 @@ func emitBody(stubs []StubFunc, models map[string]ModelSpec, qDialect query.Dial
 			err = emitCountBody(&b, st, ms, qDialect, hasParams)
 		case "Paginate":
 			err = emitPaginateBody(&b, st, ms, qDialect, hasParams)
+		case "Pluck":
+			err = emitPluckBody(&b, st, ms, qDialect, hasParams)
+		case "Sum", "Avg", "Min", "Max":
+			err = emitAggregateBody(&b, st, ms, qDialect, hasParams)
+		case "Increment", "Decrement":
+			err = emitIncrementBody(&b, st, ms, qDialect, hasParams)
 		case "Create":
 			emitCreateBody(&b, st, ms, qDialect, hasParams)
 		case "Update":
@@ -205,9 +245,13 @@ func emitTypedSignature(st StubFunc, hasParams bool) string {
 		results = "(*" + rowTypeName(st.Name) + ", error)"
 	case "Paginate":
 		results = "(*query.PageResult[" + rowTypeName(st.Name) + "], error)"
+	case "Pluck":
+		results = "([]any, error)"
+	case "Sum", "Avg", "Min", "Max":
+		results = "(float64, error)"
 	case "Exists":
 		results = "(bool, error)"
-	case "Count", "Create", "Update", "Delete", "SoftDelete", "ForceDelete", "Restore":
+	case "Count", "Create", "Update", "Delete", "SoftDelete", "ForceDelete", "Restore", "Increment", "Decrement":
 		results = "(int64, error)"
 	default:
 		// fall back to stub results
@@ -224,9 +268,13 @@ func pendingTypedReturn(st StubFunc) string {
 	switch st.Action {
 	case "Get", "First", "FirstOrFail", "Paginate":
 		return "nil, query.ErrGeneratePending"
+	case "Pluck":
+		return "nil, query.ErrGeneratePending"
 	case "Exists":
 		return "false, query.ErrGeneratePending"
-	case "Count", "Create", "Update", "Delete", "SoftDelete", "ForceDelete", "Restore":
+	case "Sum", "Avg", "Min", "Max":
+		return "0, query.ErrGeneratePending"
+	case "Count", "Create", "Update", "Delete", "SoftDelete", "ForceDelete", "Restore", "Increment", "Decrement":
 		return "0, query.ErrGeneratePending"
 	default:
 		return pendingReturn(st)
@@ -282,7 +330,7 @@ func validateStubColumns(st StubFunc, ms ModelSpec) error {
 				return err
 			}
 		}
-		if w.Col == "" {
+		if w.Kind == WhereExists || w.Kind == WhereRaw || w.Col == "" {
 			continue
 		}
 		if err := meta.RequireColumn(w.Col); err != nil {

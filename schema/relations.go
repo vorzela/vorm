@@ -40,6 +40,36 @@ func (f *Facade) BelongsToMany(leftTable, rightTable string) error {
 	return BelongsToMany(f, bp.table, Singularize(leftTable)+"_id", leftTable, Singularize(rightTable)+"_id", rightTable)
 }
 
+// NewMorphPivotBlueprint builds a morphToMany join table: one real FK plus a
+// morph pair (taggables: tag_id + taggable_id + taggable_type).
+func NewMorphPivotBlueprint(relatedTable, morph string) *Blueprint {
+	relatedCol := Singularize(relatedTable) + "_id"
+	bp := NewBlueprint(Pluralize(morph))
+	bp.ID()
+	bp.BelongsTo(relatedCol, relatedTable)
+	bp.Morphs(morph)
+	bp.Unique(relatedCol, morph+"_id", morph+"_type")
+	bp.Timestamps()
+	return bp
+}
+
+// MorphToMany writes a polymorphic many-to-many pivot
+// (tags + taggable → taggables with tag_id and taggable morphs).
+func (f *Facade) MorphToMany(relatedTable, morph string) error {
+	if f == nil {
+		f = Default
+	}
+	bp := NewMorphPivotBlueprint(relatedTable, morph)
+	relatedCol := Singularize(relatedTable) + "_id"
+	return f.Create(bp.table, func(t *Blueprint) {
+		t.ID()
+		t.BelongsTo(relatedCol, relatedTable)
+		t.Morphs(morph)
+		t.Unique(relatedCol, morph+"_id", morph+"_type")
+		t.Timestamps()
+	})
+}
+
 // HasManyComment documents the inverse of BelongsTo (FK lives on the many side).
 func HasManyComment(parentTable, childTable, fk string) string {
 	return fmt.Sprintf("// hasMany: %s has many %s via %s.%s → %s.id",

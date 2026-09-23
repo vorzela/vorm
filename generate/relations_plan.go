@@ -27,7 +27,11 @@ type relPlan struct {
 	PivotOwnerKey   string
 	PivotRelatedKey string
 	RelatedKey      string
-	PivotTimestamps bool
+	PivotCreatedAt  bool
+	PivotUpdatedAt  bool
+	PivotUnique     bool
+	OrderCol        string
+	OfManyDesc      bool
 
 	MorphType       string
 	MorphTypeColumn string
@@ -62,6 +66,10 @@ func planRelations(tables []introspect.Table) map[string][]relPlan {
 			pivots[strings.ToLower(t.Name)] = true
 			add(belongsToManyPlan(t, a, b))
 			add(belongsToManyPlan(t, b, a))
+		}
+		if fk, morph, ok := morphPivotSides(t, known); ok {
+			pivots[strings.ToLower(t.Name)] = true
+			addMorphToMany(add, t, fk, morph, tables)
 		}
 	}
 
@@ -163,6 +171,8 @@ func planRelations(tables []introspect.Table) map[string][]relPlan {
 		}
 	}
 
+	addThroughAndOfMany(add, out, known)
+
 	for owner := range out {
 		out[owner] = dedupeRelations(out[owner])
 	}
@@ -190,8 +200,9 @@ func uniqueSingleColumn(t introspect.Table, col string) bool {
 	return false
 }
 
-// pivotSides reports the two foreign keys of a join table. A pivot carries
-// nothing but its own key, timestamps and the two references.
+// pivotSides reports the two foreign keys of a join table. Extra columns
+// (pinned, timestamps, …) still count: two FKs to two different known tables
+// is enough to treat it as many-to-many.
 func pivotSides(t introspect.Table, known map[string]introspect.Table) (introspect.ForeignKey, introspect.ForeignKey, bool) {
 	var fks []introspect.ForeignKey
 	for _, fk := range t.ForeignKeys {
@@ -220,8 +231,33 @@ func belongsToManyPlan(pivot introspect.Table, own, other introspect.ForeignKey)
 		Pivot:           pivot.Name,
 		PivotOwnerKey:   own.Columns[0],
 		PivotRelatedKey: other.Columns[0],
-		PivotTimestamps: tableHasColumn(pivot, "created_at"),
+		PivotCreatedAt:  tableHasColumn(pivot, "created_at"),
+		PivotUpdatedAt:  tableHasColumn(pivot, "updated_at"),
+		PivotUnique:     uniquePair(pivot, own.Columns[0], other.Columns[0]),
 	}
+}
+
+func uniquePair(t introspect.Table, a, b string) bool {
+	la, lb := strings.ToLower(a), strings.ToLower(b)
+	pair := func(cols []string) bool {
+		if len(cols) != 2 {
+			return false
+		}
+		c0, c1 := strings.ToLower(cols[0]), strings.ToLower(cols[1])
+		return (c0 == la && c1 == lb) || (c0 == lb && c1 == la)
+	}
+	// ON CONFLICT (a, b) is valid only for a unique constraint on exactly those
+	// two columns. Partial and expression indexes do not qualify.
+	if pair(t.PrimaryKey) {
+		return true
+	}
+	for _, idx := range t.Indexes {
+		if !idx.Unique || idx.Partial || idx.Expression || !pair(idx.Columns) {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func tableHasColumn(t introspect.Table, name string) bool {
@@ -281,6 +317,171 @@ func columnIsFK(t introspect.Table, col string) bool {
 	return false
 }
 
+func morphPivotSides(t introspect.Table, known map[string]introspect.Table) (introspect.ForeignKey, morphPair, bool) {
+	morphs := morphColumns(t)
+	if len(morphs) != 1 {
+		return introspect.ForeignKey{}, morphPair{}, false
+	}
+	var fks []introspect.ForeignKey
+	for _, fk := range t.ForeignKeys {
+		if len(fk.Columns) == 1 && len(fk.RefColumns) == 1 {
+			if _, ok := known[strings.ToLower(fk.RefTable)]; ok {
+				fks = append(fks, fk)
+			}
+		}
+	}
+	if len(fks) != 1 {
+		return introspect.ForeignKey{}, morphPair{}, false
+	}
+	if columnIsFK(t, morphs[0].idCol) {
+		return introspect.ForeignKey{}, morphPair{}, false
+	}
+	return fks[0], morphs[0], true
+}
+
+func addMorphToMany(add func(relPlan), pivot introspect.Table, fk introspect.ForeignKey, morph morphPair, tables []introspect.Table) {
+	related := fk.RefTable
+	relatedPK := fk.RefColumns[0]
+	for _, other := range tables {
+		if strings.EqualFold(other.Name, pivot.Name) || strings.EqualFold(other.Name, related) {
+			continue
+		}
+		pk := other.SinglePrimaryKey()
+		if pk == "" {
+			pk = "id"
+		}
+		name := Plural(Singular(related))
+		add(relPlan{
+			Owner:           other.Name,
+			Name:            name,
+			Field:           GoName(name),
+			Kind:            query.RelationMorphToMany,
+			RelatedTable:    related,
+			LocalKey:        pk,
+			RelatedKey:      relatedPK,
+			Pivot:           pivot.Name,
+			PivotOwnerKey:   morph.idCol,
+			PivotRelatedKey: fk.Columns[0],
+			PivotCreatedAt:  tableHasColumn(pivot, "created_at"),
+			PivotUpdatedAt:  tableHasColumn(pivot, "updated_at"),
+			PivotUnique:     uniquePair(pivot, morph.idCol, fk.Columns[0]),
+			MorphType:       other.Name,
+			MorphTypeColumn: morph.typeCol,
+			MorphIDColumn:   morph.idCol,
+		})
+		inv := Plural(Singular(other.Name))
+		add(relPlan{
+			Owner:           related,
+			Name:            inv,
+			Field:           GoName(inv),
+			Kind:            query.RelationMorphToMany,
+			RelatedTable:    other.Name,
+			LocalKey:        relatedPK,
+			RelatedKey:      pk,
+			Pivot:           pivot.Name,
+			PivotOwnerKey:   fk.Columns[0],
+			PivotRelatedKey: morph.idCol,
+			PivotCreatedAt:  tableHasColumn(pivot, "created_at"),
+			PivotUpdatedAt:  tableHasColumn(pivot, "updated_at"),
+			PivotUnique:     uniquePair(pivot, morph.idCol, fk.Columns[0]),
+			MorphType:       other.Name,
+			MorphTypeColumn: morph.typeCol,
+			MorphIDColumn:   morph.idCol,
+		})
+	}
+}
+
+func addThroughAndOfMany(add func(relPlan), out map[string][]relPlan, known map[string]introspect.Table) {
+	type hop struct {
+		owner, name, related, local, foreign string
+	}
+	var hops []hop
+	for owner, plans := range out {
+		for _, p := range plans {
+			if p.Kind == query.RelationHasMany {
+				if strings.EqualFold(owner, p.RelatedTable) {
+					continue
+				}
+				hops = append(hops, hop{owner, p.Name, p.RelatedTable, p.LocalKey, p.ForeignKey})
+			}
+		}
+	}
+	sort.Slice(hops, func(i, j int) bool {
+		if hops[i].owner != hops[j].owner {
+			return hops[i].owner < hops[j].owner
+		}
+		if hops[i].name != hops[j].name {
+			return hops[i].name < hops[j].name
+		}
+		return hops[i].related < hops[j].related
+	})
+	for _, a := range hops {
+		for _, b := range hops {
+			if !strings.EqualFold(a.related, b.owner) || strings.EqualFold(b.related, a.owner) {
+				continue
+			}
+			name := b.name
+			if relationNameTaken(out[a.owner], name) {
+				name = Singular(a.related) + "_" + b.name
+				if relationNameTaken(out[a.owner], name) {
+					continue
+				}
+			}
+			throughPK := "id"
+			if t, ok := known[strings.ToLower(a.related)]; ok {
+				if pk := t.SinglePrimaryKey(); pk != "" {
+					throughPK = pk
+				}
+			}
+			add(relPlan{
+				Owner:           a.owner,
+				Name:            name,
+				Field:           GoName(name),
+				Kind:            query.RelationHasManyThrough,
+				RelatedTable:    b.related,
+				LocalKey:        a.local,
+				ForeignKey:      b.foreign,
+				Pivot:           a.related,
+				PivotOwnerKey:   a.foreign,
+				PivotRelatedKey: throughPK,
+			})
+		}
+	}
+	for _, a := range hops {
+		rel, ok := known[strings.ToLower(a.related)]
+		if !ok {
+			continue
+		}
+		orderCol := ""
+		if tableHasColumn(rel, "created_at") {
+			orderCol = "created_at"
+		} else if pk := rel.SinglePrimaryKey(); pk != "" {
+			orderCol = pk
+		} else {
+			continue
+		}
+		base := Singular(a.name)
+		latest := "latest_" + base
+		if !relationNameTaken(out[a.owner], latest) {
+			add(relPlan{
+				Owner: a.owner, Name: latest, Field: GoName(latest),
+				Kind: query.RelationHasOneOfMany, RelatedTable: a.related,
+				LocalKey: a.local, ForeignKey: a.foreign,
+				OrderCol: orderCol, OfManyDesc: true,
+			})
+		}
+		oldest := "oldest_" + base
+		if !relationNameTaken(out[a.owner], oldest) {
+			add(relPlan{
+				Owner: a.owner, Name: oldest, Field: GoName(oldest),
+				Kind: query.RelationHasOneOfMany, RelatedTable: a.related,
+				LocalKey: a.local, ForeignKey: a.foreign,
+				OrderCol: orderCol, OfManyDesc: false,
+			})
+		}
+	}
+}
+
 func dedupeRelations(plans []relPlan) []relPlan {
 	sort.SliceStable(plans, func(i, j int) bool { return plans[i].Name < plans[j].Name })
 	seen := map[string]bool{}
@@ -296,13 +497,4 @@ func dedupeRelations(plans []relPlan) []relPlan {
 		out = append(out, p)
 	}
 	return out
-}
-
-func anyRelations(rels map[string][]relPlan) bool {
-	for _, v := range rels {
-		if len(v) > 0 {
-			return true
-		}
-	}
-	return false
 }

@@ -84,6 +84,9 @@ func ParseSchemaFile(path string) ([]TableSpec, error) {
 		if left, right, ok := matchBelongsToMany(call); ok {
 			specs = append(specs, pivotSpec(left, right))
 		}
+		if related, morph, ok := matchMorphToMany(call); ok {
+			specs = append(specs, morphPivotSpec(related, morph))
+		}
 		return true
 	})
 	return specs, nil
@@ -123,6 +126,35 @@ func matchBelongsToMany(call *ast.CallExpr) (left, right string, ok bool) {
 		return "", "", false
 	}
 	return left, right, true
+}
+
+func matchMorphToMany(call *ast.CallExpr) (related, morph string, ok bool) {
+	sel, okSel := call.Fun.(*ast.SelectorExpr)
+	if !okSel || sel.Sel == nil || sel.Sel.Name != "MorphToMany" {
+		return "", "", false
+	}
+	if len(call.Args) < 2 {
+		return "", "", false
+	}
+	related = stringArg(call.Args, 0)
+	morph = stringArg(call.Args, 1)
+	if related == "" || morph == "" {
+		return "", "", false
+	}
+	return related, morph, true
+}
+
+func morphPivotSpec(related, morph string) TableSpec {
+	return TableSpec{
+		Table:      schema.Pluralize(morph),
+		HasID:      true,
+		Timestamps: true,
+		Columns: []ColSpec{
+			{Name: schema.Singularize(related) + "_id", Kind: "bigint", GoType: "int64"},
+			{Name: morph + "_type", Kind: "string", GoType: "string"},
+			{Name: morph + "_id", Kind: "bigint", GoType: "int64"},
+		},
+	}
 }
 
 func pivotSpec(left, right string) TableSpec {
@@ -203,6 +235,9 @@ func applyBlueprintCall(call *ast.CallExpr, spec *TableSpec) {
 	case "BelongsTo":
 		col := stringArg(rootArgs, 0)
 		addCol(spec, col, "bigint", "int64", flags)
+	case "CustomType":
+		sqlType := stringArg(rootArgs, 0)
+		addCol(spec, chainedString(call, "Column"), normalizeDBType(sqlType), customGoType(sqlType), flags)
 	case "Morphs":
 		prefix := stringArg(rootArgs, 0)
 		if prefix == "" {
@@ -257,6 +292,51 @@ func flattenChain(call *ast.CallExpr) (methods []string, rootName string, rootAr
 	}
 	inner := chain[len(chain)-1]
 	return methods, inner.name, inner.args
+}
+
+func chainedString(call *ast.CallExpr, method string) string {
+	cur := call
+	for cur != nil {
+		sel, ok := cur.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel == nil {
+			return ""
+		}
+		if sel.Sel.Name == method {
+			return stringArg(cur.Args, 0)
+		}
+		next, ok := sel.X.(*ast.CallExpr)
+		if !ok {
+			return ""
+		}
+		cur = next
+	}
+	return ""
+}
+
+// customGoType maps an extension SQL type onto a Go type. geography and
+// geometry arrive as text from the driver, so they are string.
+func customGoType(sqlType string) string {
+	switch normalizeDBType(sqlType) {
+	case "geography", "geometry", "citext", "ltree", "uuid", "text", "varchar",
+		"tsvector", "tsquery", "xml", "inet", "cidr":
+		return "string"
+	case "bool", "boolean":
+		return "bool"
+	case "int2", "int4", "integer", "int", "serial":
+		return "int"
+	case "int8", "bigint", "bigserial":
+		return "int64"
+	case "float4", "float8", "real":
+		return "float64"
+	case "json", "jsonb":
+		return "json.RawMessage"
+	case "bytea":
+		return "[]byte"
+	case "timestamptz", "timestamp", "date":
+		return "time.Time"
+	default:
+		return "any"
+	}
 }
 
 func stringArg(args []ast.Expr, i int) string {

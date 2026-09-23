@@ -24,5 +24,25 @@ func RefreshStats(ctx context.Context, db query.DB) error {
 	return err
 }
 
+// ActiveUserIDs calls the set-returning database function active_user_ids.
+func ActiveUserIDs(ctx context.Context, db query.DB, minId int64) ([]int64, error) {
+	const stmt = `SELECT v FROM "active_user_ids"($1) AS t(v)`
+	rows, err := db.QueryContext(ctx, stmt, minId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []int64
+	for rows.Next() {
+		var v int64
+		if err := rows.Scan(&v); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
 // Not generated (signature has no direct Go form):
 //   - audit_trigger: returns trigger

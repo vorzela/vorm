@@ -151,8 +151,16 @@ func isVowel(r rune) bool {
 // ModelName is the struct name for a table.
 func ModelName(table string) string { return GoName(Singular(table)) }
 
-// EntityName is the package-level query handle name for a table.
-func EntityName(table string) string { return GoName(table) }
+// EntityName is the package-level query handle for a table. It is the Go name
+// of the table (users → Users) unless that name is the model struct too
+// (post_tag → PostTag), in which case the handle is pluralized (PostTags).
+func EntityName(table string) string {
+	entity := GoName(table)
+	if entity == ModelName(table) {
+		return GoName(Plural(table))
+	}
+	return entity
+}
 
 // FileName is the generated file name for a table's model.
 func FileName(table string) string {

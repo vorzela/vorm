@@ -2,6 +2,7 @@ package query
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"reflect"
 	"strings"
@@ -72,6 +73,12 @@ func assign(dest, val any) error {
 	switch {
 	case target.Kind() == reflect.Interface:
 		target.Set(vv)
+	case target.Type() == reflect.TypeFor[sql.NullFloat64]():
+		f, ok := toFloat64(val)
+		if !ok {
+			return fmt.Errorf("cannot assign %T to sql.NullFloat64", val)
+		}
+		target.Set(reflect.ValueOf(sql.NullFloat64{Float64: f, Valid: true}))
 	case vv.Type().AssignableTo(target.Type()):
 		target.Set(vv)
 	case vv.Type().ConvertibleTo(target.Type()):
@@ -88,6 +95,23 @@ func assign(dest, val any) error {
 		return fmt.Errorf("cannot assign %T to %s", val, target.Type())
 	}
 	return nil
+}
+
+func toFloat64(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case int32:
+		return float64(n), true
+	default:
+		return 0, false
+	}
 }
 
 type fakeResult struct {

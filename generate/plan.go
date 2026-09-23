@@ -212,6 +212,9 @@ func (pl *planner) selectPlan(cols []string, mode selectMode) (*plan, error) {
 			quoted[i] = q
 		}
 		p.text(strings.Join(quoted, ", "))
+		if err := pl.writeRelSubselects(p); err != nil {
+			return nil, err
+		}
 	}
 
 	tableQ, err := pl.quote(pl.ms.Table)
@@ -325,6 +328,9 @@ func (pl *planner) writeJoins(p *plan) error {
 // Builder.compileWhere.
 func (pl *planner) writeWhere(p *plan) error {
 	soft := pl.ms.SoftDeletes && !pl.st.WithTrashed
+	if pl.st.OnlyTrashed {
+		soft = true
+	}
 	if len(pl.st.Wheres) == 0 && !soft {
 		return nil
 	}
@@ -332,8 +338,6 @@ func (pl *planner) writeWhere(p *plan) error {
 	if len(pl.st.Wheres) == 0 {
 		return pl.writeSoftFilter(p)
 	}
-	// AND binds tighter than OR, so an unparenthesised OR group would let
-	// soft-deleted rows through the filter.
 	group := soft && wheresContainOr(pl.st.Wheres)
 	if group {
 		p.text("(")
@@ -355,6 +359,10 @@ func (pl *planner) writeSoftFilter(p *plan) error {
 	col, err := pl.quoteCol("deleted_at")
 	if err != nil {
 		return err
+	}
+	if pl.st.OnlyTrashed {
+		p.text(col + " IS NOT NULL")
+		return nil
 	}
 	p.text(col + " IS NULL")
 	return nil
@@ -385,15 +393,39 @@ func (pl *planner) writePreds(p *plan, preds []WhereSpec, allowOr bool) error {
 	return nil
 }
 
+func (pl *planner) writeRaw(p *plan, w WhereSpec) error {
+	pieces, err := query.SplitRawBinds(w.Raw)
+	if err != nil {
+		return fmt.Errorf("WhereRaw: %w", err)
+	}
+	n := 0
+	for _, piece := range pieces {
+		if piece.Bind {
+			n++
+		}
+	}
+	if n != len(w.Args) {
+		return fmt.Errorf("WhereRaw has %d ? placeholders and %d arguments", n, len(w.Args))
+	}
+	p.text("(")
+	ai := 0
+	for _, piece := range pieces {
+		if piece.Bind {
+			p.placeholder(pl.dialect)
+			p.arg(pl.bindFn(w.Args[ai]))
+			ai++
+			continue
+		}
+		p.text(piece.Text)
+	}
+	p.text(")")
+	return nil
+}
+
 func (pl *planner) writePred(p *plan, w WhereSpec) error {
 	switch w.Kind {
 	case WhereRaw:
-		p.text("(" + w.Raw + ")")
-		for _, a := range w.Args {
-			p.placeholder(pl.dialect)
-			p.arg(pl.bindFn(a))
-		}
-		return nil
+		return pl.writeRaw(p, w)
 
 	case WhereSearch:
 		op := "ILIKE"
@@ -417,6 +449,45 @@ func (pl *planner) writePred(p *plan, w WhereSpec) error {
 			p.arg(pattern)
 		}
 		p.text(")")
+		return nil
+
+	case WhereExists:
+		return pl.writeExists(p, w)
+
+	case WhereFTS:
+		q, err := pl.quoteCol(w.Col)
+		if err != nil {
+			return err
+		}
+		if pl.dialect == query.DialectMySQL {
+			p.text("MATCH (" + q + ") AGAINST (")
+			p.placeholder(pl.dialect)
+			p.arg(pl.bindFn(w.ArgExpr))
+			p.text(")")
+			return nil
+		}
+		p.text(q + " @@ to_tsquery('english', ")
+		p.placeholder(pl.dialect)
+		p.arg(pl.bindFn(w.ArgExpr))
+		p.text(")")
+		return nil
+
+	case WhereJSON:
+		q, err := pl.quoteCol(w.Col)
+		if err != nil {
+			return err
+		}
+		if pl.dialect == query.DialectMySQL {
+			p.text("JSON_CONTAINS(" + q + ", ")
+			p.placeholder(pl.dialect)
+			p.arg(pl.bindFn(w.ArgExpr))
+			p.text(")")
+			return nil
+		}
+		p.text(q + " @> ")
+		p.placeholder(pl.dialect)
+		p.arg(pl.bindFn(w.ArgExpr))
+		p.text("::jsonb")
 		return nil
 	}
 
@@ -529,4 +600,306 @@ func (pl *planner) writeExplicitWhere(p *plan) error {
 	}
 	p.text(" WHERE ")
 	return pl.writePreds(p, pl.st.Wheres, true)
+}
+
+func (pl *planner) aggregatePlan(fn, col string) (*plan, error) {
+	if pl.ms.Table == "" {
+		return nil, fmt.Errorf("cannot resolve model/entity %q — run vorm generate models", pl.st.Entity)
+	}
+	fn = strings.ToUpper(fn)
+	switch fn {
+	case "SUM", "AVG", "MIN", "MAX":
+	default:
+		return nil, fmt.Errorf("unknown aggregate %q", fn)
+	}
+	tableQ, err := pl.quote(pl.ms.Table)
+	if err != nil {
+		return nil, err
+	}
+	colQ, err := pl.quoteCol(col)
+	if err != nil {
+		return nil, err
+	}
+	p := &plan{}
+	p.text("SELECT " + fn + "(" + colQ + ") FROM " + tableQ)
+	if err := pl.writeJoins(p); err != nil {
+		return nil, err
+	}
+	if err := pl.writeWhere(p); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+func (pl *planner) incrementPlan(col, amountExpr string, decrement bool) (*plan, error) {
+	tableQ, err := pl.quote(pl.ms.Table)
+	if err != nil {
+		return nil, err
+	}
+	colQ, err := pl.quote(col)
+	if err != nil {
+		return nil, err
+	}
+	op := " + "
+	if decrement {
+		op = " - "
+	}
+	p := &plan{}
+	p.text("UPDATE " + tableQ + " SET " + colQ + " = " + colQ + op)
+	p.placeholder(pl.dialect)
+	p.arg(pl.bindFn(amountExpr))
+	if err := pl.writeWhere(p); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+func (pl *planner) writeRelSubselects(p *plan) error {
+	for _, sub := range pl.st.RelSubselects {
+		rel, ok := pl.ms.relation(sub.Name)
+		if !ok {
+			return fmt.Errorf("unknown relation %q", sub.Name)
+		}
+		inner, err := pl.existsInnerSQL(rel, WhereSpec{})
+		if err != nil {
+			return err
+		}
+		alias := strings.ReplaceAll(sub.Name, ".", "_")
+		if sub.Count {
+			alias += "_count"
+			inner = strings.Replace(inner, "SELECT 1 FROM", "SELECT COUNT(*) FROM", 1)
+			sql := "(" + inner + ")"
+			aq, err := pl.quote(alias)
+			if err != nil {
+				return err
+			}
+			p.text(", " + sql + " AS " + aq)
+			continue
+		}
+		alias += "_exists"
+		aq, err := pl.quote(alias)
+		if err != nil {
+			return err
+		}
+		p.text(", (SELECT EXISTS (" + inner + ")) AS " + aq)
+	}
+	return nil
+}
+
+func (pl *planner) writeExists(p *plan, w WhereSpec) error {
+	rel, ok := pl.ms.relation(w.RelName)
+	if !ok {
+		return fmt.Errorf("unknown relation %q", w.RelName)
+	}
+	if w.Not {
+		p.text("NOT EXISTS (")
+	} else {
+		p.text("EXISTS (")
+	}
+	_, extra := splitExistsExtra(w)
+	sql, err := pl.existsInnerSQL(rel, extra)
+	if err != nil {
+		return err
+	}
+	if extra.Col != "" && extra.Kind != WhereNull && extra.Kind != WhereNotNull {
+		if err := pl.writeExistsWithBind(p, sql, extra); err != nil {
+			return err
+		}
+		p.text(")")
+		return nil
+	}
+	p.text(sql)
+	p.text(")")
+	return nil
+}
+
+func splitExistsExtra(w WhereSpec) (WhereSpec, WhereSpec) {
+	if w.Col == "" && w.Kind == WhereExists {
+		return w, WhereSpec{}
+	}
+	extra := w
+	extra.RelName = ""
+	if extra.Kind == WhereExists {
+		extra.Kind = ""
+	}
+	return w, extra
+}
+
+func (pl *planner) writeExistsWithBind(p *plan, sql string, extra WhereSpec) error {
+	const mark = "\x00ph\x00"
+	before, after, ok := strings.Cut(sql, mark)
+	if !ok {
+		p.text(sql)
+		return nil
+	}
+	p.text(before)
+	p.placeholder(pl.dialect)
+	p.arg(pl.bindFn(extra.ArgExpr))
+	p.text(after)
+	return nil
+}
+
+func (pl *planner) existsInnerSQL(rel RelSpec, extra WhereSpec) (string, error) {
+	ea, err := existsFromRel(pl.ms.Table, pl.ms.PrimaryKey, rel, extra.Col != "")
+	if err != nil {
+		return "", err
+	}
+	relQ, err := pl.quote(ea.relatedTable)
+	if err != nil {
+		return "", err
+	}
+	relCol, err := query.QuoteIdent(pl.dialect, ea.relatedTable+"."+ea.relatedCol)
+	if err != nil {
+		return "", err
+	}
+	parentCol, err := query.QuoteIdent(pl.dialect, ea.parentTable+"."+ea.parentCol)
+	if err != nil {
+		return "", err
+	}
+	var sb strings.Builder
+	sb.WriteString("SELECT 1 FROM ")
+	sb.WriteString(relQ)
+	if ea.joinTable != "" {
+		joinQ, err := pl.quote(ea.joinTable)
+		if err != nil {
+			return "", err
+		}
+		left, err := query.QuoteIdent(pl.dialect, ea.joinOnLeft)
+		if err != nil {
+			return "", err
+		}
+		right, err := query.QuoteIdent(pl.dialect, ea.joinOnRight)
+		if err != nil {
+			return "", err
+		}
+		sb.WriteString(" INNER JOIN ")
+		sb.WriteString(joinQ)
+		sb.WriteString(" ON ")
+		sb.WriteString(left)
+		sb.WriteString(" = ")
+		sb.WriteString(right)
+	}
+	sb.WriteString(" WHERE ")
+	sb.WriteString(relCol)
+	sb.WriteString(" = ")
+	sb.WriteString(parentCol)
+	if ea.morphTypeCol != "" && ea.morphType != "" {
+		if err := query.SafeIdent(ea.morphType); err != nil {
+			return "", err
+		}
+		typeQ, err := query.QuoteIdent(pl.dialect, ea.relatedTable+"."+ea.morphTypeCol)
+		if err != nil {
+			return "", err
+		}
+		sb.WriteString(" AND ")
+		sb.WriteString(typeQ)
+		sb.WriteString(" = '")
+		sb.WriteString(strings.ReplaceAll(ea.morphType, "'", "''"))
+		sb.WriteString("'")
+	}
+	if extra.Col == "" {
+		return sb.String(), nil
+	}
+	col := extra.Col
+	if !strings.Contains(col, ".") {
+		if ea.joinTable != "" {
+			col = ea.joinTable + "." + col
+		} else {
+			col = ea.relatedTable + "." + col
+		}
+	}
+	qc, err := query.QuoteIdent(pl.dialect, col)
+	if err != nil {
+		return "", err
+	}
+	switch extra.Kind {
+	case WhereNull:
+		sb.WriteString(" AND ")
+		sb.WriteString(qc)
+		sb.WriteString(" IS NULL")
+	case WhereNotNull:
+		sb.WriteString(" AND ")
+		sb.WriteString(qc)
+		sb.WriteString(" IS NOT NULL")
+	default:
+		op := strings.ToUpper(strings.TrimSpace(extra.Op))
+		if op == "" {
+			op = "="
+		}
+		if err := query.SafeOp(op); err != nil {
+			return "", err
+		}
+		sb.WriteString(" AND ")
+		sb.WriteString(qc)
+		sb.WriteString(" ")
+		sb.WriteString(op)
+		sb.WriteString(" ")
+		sb.WriteString("\x00ph\x00")
+	}
+	return sb.String(), nil
+}
+
+type existsPlan struct {
+	relatedTable, relatedCol           string
+	parentTable, parentCol             string
+	joinTable, joinOnLeft, joinOnRight string
+	morphType, morphTypeCol            string
+}
+
+func existsFromRel(parentTable, parentPK string, rel RelSpec, extra bool) (existsPlan, error) {
+	parentCol := rel.LocalKey
+	if parentCol == "" {
+		parentCol = parentPK
+	}
+	ea := existsPlan{
+		parentTable:  parentTable,
+		parentCol:    parentCol,
+		morphType:    rel.MorphType,
+		morphTypeCol: rel.MorphTypeColumn,
+	}
+	switch rel.Kind {
+	case query.RelationBelongsTo:
+		ea.relatedTable = rel.Table
+		ea.relatedCol = rel.ForeignKey
+		if ea.relatedCol == "" {
+			ea.relatedCol = "id"
+		}
+		ea.parentCol = rel.LocalKey
+	case query.RelationHasMany, query.RelationHasOne, query.RelationMorphMany, query.RelationHasOneOfMany:
+		ea.relatedTable = rel.Table
+		ea.relatedCol = rel.ForeignKey
+		ea.parentCol = rel.LocalKey
+	case query.RelationHasManyThrough:
+		if rel.PivotTable == "" || rel.PivotLocalKey == "" {
+			return ea, fmt.Errorf("hasManyThrough %q needs through keys", rel.Name)
+		}
+		ea.relatedTable = rel.PivotTable
+		ea.relatedCol = rel.PivotLocalKey
+		ea.joinTable = rel.Table
+		farPK := rel.PivotForeignKey
+		if farPK == "" {
+			farPK = "id"
+		}
+		ea.joinOnLeft = rel.PivotTable + "." + farPK
+		ea.joinOnRight = rel.Table + "." + rel.ForeignKey
+	case query.RelationBelongsToMany, query.RelationMorphToMany:
+		if rel.PivotTable == "" {
+			return ea, fmt.Errorf("belongsToMany %q needs a pivot", rel.Name)
+		}
+		ea.relatedTable = rel.PivotTable
+		ea.relatedCol = rel.PivotLocalKey
+		ea.parentCol = rel.LocalKey
+		if extra {
+			pk := rel.ForeignKey
+			if pk == "" {
+				pk = "id"
+			}
+			ea.joinTable = rel.Table
+			ea.joinOnLeft = rel.PivotTable + "." + rel.PivotForeignKey
+			ea.joinOnRight = rel.Table + "." + pk
+		}
+	default:
+		return ea, fmt.Errorf("WhereHas does not support %s", rel.Kind)
+	}
+	return ea, nil
 }
