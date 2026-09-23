@@ -572,6 +572,9 @@ func applyColumnMethod(filename string, col *Column, step callStep) error {
 	case "Unique":
 		col.Unique()
 		return nil
+	case "Primary":
+		col.Primary()
+		return nil
 	case "Default":
 		if len(step.args) == 0 {
 			return fmt.Errorf("schema: %s: Default needs a value", filename)

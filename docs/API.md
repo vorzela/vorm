@@ -625,7 +625,7 @@ func Down(s *schema.Facade) {
 |--------|----------------|
 | `ID()` / `Id()` | bigserial / bigint AI PK `id` |
 | `BigIncrements(name)` | named AI PK |
-| `UUID(name)` | `UUID NOT NULL` |
+| `UUID(name)` | Postgres `UUID DEFAULT gen_random_uuid()`; MariaDB `UUID DEFAULT UUID_v4()`; MySQL `CHAR(36)` |
 | `String(name, length...)` | `VARCHAR(255)` default |
 | `Text(name)` | `TEXT NULL` |
 | `Boolean` / `Integer` / `BigInteger` | NOT NULL |
@@ -633,7 +633,7 @@ func Down(s *schema.Facade) {
 | `ForeignIDNullable` | nullable FK |
 | `BelongsTo(col, table)` | constrained FK, cascade delete |
 | `Morphs(name)` | `{name}_type` + `{name}_id` + index |
-| `CustomType(sqlType).Column(name)` | extension SQL type, written through on every dialect |
+| `CustomType(sqlType).Column(name)` | extension or dialect type, written through unchanged |
 | `Enum(col, values...)` | PG type / MySQL ENUM |
 | `Timestamps()` | `created_at`, `updated_at` |
 | `SoftDeletes()` | `deleted_at` + index |
@@ -641,9 +641,21 @@ func Down(s *schema.Facade) {
 | `DropColumn` / `DropIndex` | alter down |
 | `Raw(up, down)` | dialect SQL appended as-is |
 
+`t.UUID` uses a random version-4 default where the server can generate one.
+Collision chance for v4 is negligible; `.Primary()` or `.Unique()` makes the
+database reject a duplicate if one is ever inserted.
+
+```go
+t.UUID("id").Primary()
+t.UUID("public_id").Unique()
+// Postgres:  UUID NOT NULL DEFAULT gen_random_uuid()   -- 13+
+// MariaDB:   UUID NOT NULL DEFAULT UUID_v4()           -- type since 10.7, UUID_v4() since 11.7
+// MySQL:     CHAR(36) NOT NULL                         -- UUID() is version 1; no UUID type, no v4 function
+```
+
 ### Column chain
 
-`Column(name)` (after `CustomType` only), `Nullable()`, `NotNull()`, `Unique()`, `Default(v)`, `DefaultCurrent()`,
+`Column(name)` (after `CustomType` only), `Primary()`, `Nullable()`, `NotNull()`, `Unique()`, `Default(v)`, `DefaultCurrent()`,
 `Constrained(table)`, `References(table, column)`,
 `CascadeOnDelete()`, `RestrictOnDelete()`, `NullOnDelete()`,
 `CascadeOnUpdate()`.

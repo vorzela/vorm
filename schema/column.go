@@ -23,6 +23,7 @@ type Column struct {
 	enumName      string
 	enumValues    []string
 	custom        bool // set by CustomType; name arrives via Column
+	uuidV4        bool // t.UUID: dialect picks the v4 default
 }
 
 func newColumn(name string) *Column {
@@ -44,6 +45,13 @@ func (c *Column) primary() *Column {
 	c.isPrimary = true
 	c.nullable = false
 	return c
+}
+
+// Primary marks the column as the table primary key.
+//
+//	t.UUID("id").Primary()
+func (c *Column) Primary() *Column {
+	return c.primary()
 }
 
 func (c *Column) autoIncrement() *Column {
@@ -183,15 +191,19 @@ func (c *Column) setName(name string) error {
 	return nil
 }
 
-func (c *Column) sql(mysql bool) string {
+func (c *Column) sql(dialect string) string {
 	if c.name == "" {
 		panic("vorm/schema: CustomType requires .Column(\"name\")")
 	}
+	mysql := dialect == "mysql" || dialect == "mariadb"
 	var b strings.Builder
 	b.WriteString(c.name)
 	b.WriteString(" ")
 
 	switch {
+	case c.uuidV4 && dialect == "mysql":
+		// MySQL has UUID() (version 1) and no UUID column type.
+		b.WriteString("CHAR(36)")
 	case c.autoInc && c.isPrimary:
 		if mysql {
 			b.WriteString("BIGINT AUTO_INCREMENT PRIMARY KEY")
@@ -225,12 +237,15 @@ func (c *Column) sql(mysql bool) string {
 			b.WriteString(" NOT NULL")
 		}
 	}
-	if c.defaultExpr != "" && !(c.autoInc && c.isPrimary) {
+	if expr := c.defaultSQL(dialect); expr != "" && !(c.autoInc && c.isPrimary) {
 		b.WriteString(" DEFAULT ")
-		b.WriteString(c.defaultExpr)
+		b.WriteString(expr)
 	}
-	if c.unique {
+	if c.unique && !c.isPrimary {
 		b.WriteString(" UNIQUE")
+	}
+	if c.isPrimary && !c.autoInc {
+		b.WriteString(" PRIMARY KEY")
 	}
 	if c.foreignTable != "" {
 		b.WriteString(" REFERENCES ")
@@ -248,4 +263,23 @@ func (c *Column) sql(mysql bool) string {
 		}
 	}
 	return b.String()
+}
+
+// defaultSQL is an explicit Default(), or the v4 generator for t.UUID().
+// MariaDB 11.7+ has UUID_v4(). MySQL has no v4 function.
+func (c *Column) defaultSQL(dialect string) string {
+	if c.defaultExpr != "" {
+		return c.defaultExpr
+	}
+	if !c.uuidV4 {
+		return ""
+	}
+	switch dialect {
+	case "mariadb":
+		return "UUID_v4()"
+	case "mysql":
+		return ""
+	default:
+		return "gen_random_uuid()"
+	}
 }

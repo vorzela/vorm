@@ -213,6 +213,45 @@ func Up(s *schema.Facade) {
 	}
 }
 
+func TestCompileSourceUUID(t *testing.T) {
+	src := `package migrations
+import "github.com/vorzela/vorm/schema"
+func Up(s *schema.Facade) {
+	s.Create("accounts", func(t *schema.Blueprint) {
+		t.UUID("id").Primary()
+		t.UUID("public_id").Unique()
+	})
+}
+func Down(s *schema.Facade) { s.DropIfExists("accounts") }
+`
+	pg, err := schema.CompileSource("accounts.go", src, "postgres")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY",
+		"public_id UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE",
+	} {
+		if !strings.Contains(pg.UpSQL, want) {
+			t.Fatalf("postgres missing %q:\n%s", want, pg.UpSQL)
+		}
+	}
+	maria, err := schema.CompileSource("accounts.go", src, "mariadb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(maria.UpSQL, "id UUID NOT NULL DEFAULT UUID_v4() PRIMARY KEY") {
+		t.Fatalf("mariadb:\n%s", maria.UpSQL)
+	}
+	my, err := schema.CompileSource("accounts.go", src, "mysql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(my.UpSQL, "id CHAR(36) NOT NULL PRIMARY KEY") || strings.Contains(my.UpSQL, "gen_random_uuid") || strings.Contains(my.UpSQL, "UUID_v4") {
+		t.Fatalf("mysql:\n%s", my.UpSQL)
+	}
+}
+
 func TestCompileSourceDoesNotExecuteFacade(t *testing.T) {
 	src := `package migrations
 import "github.com/vorzela/vorm/schema"

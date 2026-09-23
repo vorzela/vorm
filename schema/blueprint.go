@@ -56,9 +56,20 @@ func (b *Blueprint) BigIncrements(name string) *Column {
 	return b.add(newColumn(name).primary().autoIncrement())
 }
 
-// UUID adds UUID column (pair with CreateExtension("pgcrypto") or uuid-ossp).
+// UUID adds a NOT NULL uuid column with a random version-4 default where the
+// server can generate one. Collision chance for v4 is negligible; use
+// .Primary() or .Unique() when the database must reject a duplicate insert.
+//
+//	t.UUID("id").Primary()
+//	t.UUID("public_id").Unique()
+//
+// Postgres: UUID DEFAULT gen_random_uuid() (built in since 13).
+// MariaDB:  UUID DEFAULT UUID_v4() (type since 10.7; UUID_v4 since 11.7).
+// MySQL:    CHAR(36) with no server default (UUID() is version 1).
 func (b *Blueprint) UUID(name string) *Column {
-	return b.add(newColumn(name).typ("UUID").NotNull())
+	c := newColumn(name).typ("UUID").NotNull()
+	c.uuidV4 = true
+	return b.add(c)
 }
 
 // String adds VARCHAR(n) NOT NULL (default 255). Call .Nullable() if needed.
@@ -208,14 +219,14 @@ func (b *Blueprint) add(c *Column) *Column {
 
 // Compile renders Up/Down SQL for the dialect.
 func (b *Blueprint) Compile(dialect string) (up, down string) {
-	mysql := dialect == "mysql" || dialect == "mariadb"
 	if b.alter {
-		return b.compileAlter(mysql)
+		return b.compileAlter(dialect)
 	}
-	return b.compileCreate(mysql)
+	return b.compileCreate(dialect)
 }
 
-func (b *Blueprint) compileCreate(mysql bool) (string, string) {
+func (b *Blueprint) compileCreate(dialect string) (string, string) {
+	mysql := dialect == "mysql" || dialect == "mariadb"
 	var upParts []string
 
 	if !mysql {
@@ -227,7 +238,7 @@ func (b *Blueprint) compileCreate(mysql bool) (string, string) {
 
 	var cols []string
 	for _, c := range b.columns {
-		cols = append(cols, "    "+c.sql(mysql))
+		cols = append(cols, "    "+c.sql(dialect))
 	}
 	upParts = append(upParts, fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n%s\n);", b.table, strings.Join(cols, ",\n")))
 
@@ -268,10 +279,11 @@ func (b *Blueprint) compileCreate(mysql bool) (string, string) {
 	return strings.Join(upParts, "\n"), strings.Join(downParts, "\n")
 }
 
-func (b *Blueprint) compileAlter(mysql bool) (string, string) {
+func (b *Blueprint) compileAlter(dialect string) (string, string) {
+	mysql := dialect == "mysql" || dialect == "mariadb"
 	var ups, downs []string
 	for _, c := range b.columns {
-		ups = append(ups, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s;", b.table, c.sql(mysql)))
+		ups = append(ups, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s;", b.table, c.sql(dialect)))
 		if mysql {
 			downs = append(downs, fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s;", b.table, c.name))
 		} else {
