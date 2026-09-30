@@ -100,7 +100,9 @@ func (b *Builder[T]) compileExistsSQL(ea existsArg, placeholder func() string) (
 			if err := SafeIdent(ea.MorphType); err != nil {
 				return "", nil, err
 			}
-			sb.WriteString("'" + strings.ReplaceAll(ea.MorphType, "'", "''") + "'")
+			sb.WriteByte('\'')
+			sb.WriteString(strings.ReplaceAll(ea.MorphType, "'", "''"))
+			sb.WriteByte('\'')
 		}
 	}
 	for _, extra := range ea.Extra {
