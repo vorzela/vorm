@@ -69,6 +69,10 @@ type Config struct {
 	EmitFunctions bool
 	IncludeViews  bool
 
+	// EmitSQLAsComment mirrors sqlc gen.go.emit_sql_as_comment: write the
+	// generated SQL as a block comment above each query function.
+	EmitSQLAsComment bool
+
 	Path string // path config was loaded from (empty if defaults only)
 
 	outDirSet      bool // true if OUT_DIR was explicitly set in file / Set
@@ -125,34 +129,38 @@ func Load(dir string) (*Config, error) {
 	cfg := Default()
 	f, err := os.Open(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return cfg, nil
+		if !os.IsNotExist(err) {
+			return nil, err
 		}
-		return nil, err
-	}
-	defer f.Close()
-	cfg.Path = path
+	} else {
+		defer f.Close()
+		cfg.Path = path
 
-	sc := bufio.NewScanner(f)
-	lineNo := 0
-	for sc.Scan() {
-		lineNo++
-		line := strings.TrimSpace(sc.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
+		sc := bufio.NewScanner(f)
+		lineNo := 0
+		for sc.Scan() {
+			lineNo++
+			line := strings.TrimSpace(sc.Text())
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			key, val, ok := strings.Cut(line, "=")
+			if !ok {
+				return nil, fmt.Errorf("%s:%d: want KEY=value", path, lineNo)
+			}
+			key = strings.TrimSpace(strings.ToUpper(key))
+			val = strings.TrimSpace(val)
+			val = strings.Trim(val, `"'`)
+			if err := cfg.set(key, val); err != nil {
+				return nil, fmt.Errorf("%s:%d: %w", path, lineNo, err)
+			}
 		}
-		key, val, ok := strings.Cut(line, "=")
-		if !ok {
-			return nil, fmt.Errorf("%s:%d: want KEY=value", path, lineNo)
-		}
-		key = strings.TrimSpace(strings.ToUpper(key))
-		val = strings.TrimSpace(val)
-		val = strings.Trim(val, `"'`)
-		if err := cfg.set(key, val); err != nil {
-			return nil, fmt.Errorf("%s:%d: %w", path, lineNo, err)
+		if err := sc.Err(); err != nil {
+			return nil, err
 		}
 	}
-	if err := sc.Err(); err != nil {
+	cfg.applyDerived()
+	if err := applyYAML(cfg, dir); err != nil {
 		return nil, err
 	}
 	cfg.applyDerived()
@@ -217,6 +225,12 @@ func (c *Config) set(key, val string) error {
 			return fmt.Errorf("EMIT_FUNCTIONS: %w", err)
 		}
 		c.EmitFunctions = b
+	case "EMIT_SQL_AS_COMMENT":
+		b, err := parseBool(val)
+		if err != nil {
+			return fmt.Errorf("EMIT_SQL_AS_COMMENT: %w", err)
+		}
+		c.EmitSQLAsComment = b
 	case "INCLUDE_VIEWS":
 		b, err := parseBool(val)
 		if err != nil {
@@ -371,6 +385,9 @@ func Format(c *Config) string {
 	fmt.Fprintf(&b, "SCHEMA_NAME=%s\n", c.SchemaName)
 	fmt.Fprintf(&b, "EMIT_RELATIONS=%s\n", boolString(c.EmitRelations))
 	fmt.Fprintf(&b, "EMIT_FUNCTIONS=%s\n", boolString(c.EmitFunctions))
+	b.WriteString("# sqlc-style: write generated SQL as a comment above each gen function\n")
+	b.WriteString("# (also: vorm.yaml → gen.go.emit_sql_as_comment)\n")
+	fmt.Fprintf(&b, "EMIT_SQL_AS_COMMENT=%s\n", boolString(c.EmitSQLAsComment))
 	fmt.Fprintf(&b, "INCLUDE_VIEWS=%s\n\n", boolString(c.IncludeViews))
 
 	fmt.Fprintf(&b, "QUERY_DIR=%s\n", c.QueryDir)
@@ -439,6 +456,8 @@ func (c *Config) Get(key string) (string, error) {
 		return boolString(c.EmitRelations), nil
 	case "EMIT_FUNCTIONS":
 		return boolString(c.EmitFunctions), nil
+	case "EMIT_SQL_AS_COMMENT":
+		return boolString(c.EmitSQLAsComment), nil
 	case "INCLUDE_VIEWS":
 		return boolString(c.IncludeViews), nil
 	default:
@@ -459,6 +478,6 @@ func Keys() []string {
 		"PACKAGE", "OUT_DIR", "DRIVER", "DIALECT",
 		"QUERY_DIR", "MODEL_DIR", "SCHEMA_DIR", "MODEL_PACKAGE", "MODEL_IMPORT",
 		"DATABASE_URL", "MIGRATION_PATH", "MODEL_SOURCE", "SCHEMA_NAME",
-		"EMIT_RELATIONS", "EMIT_FUNCTIONS", "INCLUDE_VIEWS",
+		"EMIT_RELATIONS", "EMIT_FUNCTIONS", "EMIT_SQL_AS_COMMENT", "INCLUDE_VIEWS",
 	}
 }

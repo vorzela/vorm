@@ -24,7 +24,7 @@ func emitDBFile(opts *Options) string {
 }
 
 func emitQueryFile(opts *Options, stubs []StubFunc, models map[string]ModelSpec) (string, error) {
-	body, err := emitBody(stubs, models, queryDialectOf(opts.Dialect))
+	body, err := emitBody(opts, stubs, models, queryDialectOf(opts.Dialect))
 	if err != nil {
 		return "", err
 	}
@@ -144,8 +144,11 @@ func writeImports(b *strings.Builder, imports map[string]bool) {
 }
 
 // emitBody renders the Row/Params types, the query functions and the scanners.
-func emitBody(stubs []StubFunc, models map[string]ModelSpec, qDialect query.Dialect) (string, error) {
+func emitBody(opts *Options, stubs []StubFunc, models map[string]ModelSpec, qDialect query.Dialect) (string, error) {
 	var b strings.Builder
+	if opts == nil {
+		opts = &Options{}
+	}
 
 	// Emit Row + Params types first (sqlc-style).
 	for _, st := range stubs {
@@ -174,7 +177,15 @@ func emitBody(stubs []StubFunc, models map[string]ModelSpec, qDialect query.Dial
 		}
 
 		hasParams := len(userParams(st)) > 0
-		fmt.Fprintf(&b, "// %s is generated from // vorm:query in %s\n", st.Name, filepath.Base(st.File))
+		if opts.EmitSQLAsComment {
+			if sqls := previewSQL(st, ms, qDialect, hasParams); len(sqls) > 0 {
+				writeSQLAsComment(&b, st.Name, sqls...)
+			} else {
+				fmt.Fprintf(&b, "// %s is generated from // vorm:query in %s\n", st.Name, filepath.Base(st.File))
+			}
+		} else {
+			fmt.Fprintf(&b, "// %s is generated from // vorm:query in %s\n", st.Name, filepath.Base(st.File))
+		}
 		sig := emitTypedSignature(st, hasParams)
 		fmt.Fprintf(&b, "func %s%s {\n", st.Name, sig)
 

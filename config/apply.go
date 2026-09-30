@@ -15,14 +15,15 @@ func (c *Config) ToGenerateOptions() generate.Options {
 		dialect = "postgres"
 	}
 	return generate.Options{
-		QueryDir:     c.QueryDir,
-		OutDir:       c.OutDir,
-		ModelDir:     c.ModelDir,
-		ModelImport:  c.ModelImport,
-		Package:      c.Package,
-		ModelPackage: c.ModelPackage,
-		Dialect:      dialect,
-		Driver:       c.Driver,
+		QueryDir:         c.QueryDir,
+		OutDir:           c.OutDir,
+		ModelDir:         c.ModelDir,
+		ModelImport:      c.ModelImport,
+		Package:          c.Package,
+		ModelPackage:     c.ModelPackage,
+		Dialect:          dialect,
+		Driver:           c.Driver,
+		EmitSQLAsComment: c.EmitSQLAsComment,
 	}
 }
 

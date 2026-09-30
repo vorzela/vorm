@@ -789,11 +789,31 @@ models usually declare those fields explicitly from introspection.
 | `SCHEMA_NAME` | `public` | PG schema / MySQL database |
 | `EMIT_RELATIONS` | `true` | loaders + relation fields |
 | `EMIT_FUNCTIONS` | `true` | stored-routine wrappers |
+| `EMIT_SQL_AS_COMMENT` | `false` | SQL block comment above each `gen` function (sqlc `emit_sql_as_comment`) |
 | `INCLUDE_VIEWS` | `false` | generate models for views |
 | `DATABASE_URL` | — | prefer the environment |
+
+Optional `vorm.yaml` / `vorm.yml` overlays the same flag (sqlc-shaped keys win):
+
+```yaml
+version: "1"
+gen:
+  go:
+    emit_sql_as_comment: true
+```
+
+When enabled, generated functions look like:
+
+```go
+// GetByEmail
+//
+//	SELECT "id", "email" FROM "users" WHERE "email" = $1 AND "deleted_at" IS NULL LIMIT 1
+func GetByEmail(ctx context.Context, db query.DB, arg GetByEmailParams) (*GetByEmailRow, error) {
+```
 
 ```bash
 vorm config
 vorm config set PACKAGE=vormgen
+vorm config set EMIT_SQL_AS_COMMENT=true
 vorm config lint
 ```

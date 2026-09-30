@@ -693,3 +693,56 @@ func Nearby(ctx context.Context, db query.DB, lon float64, lat float64, meters i
 		t.Fatalf("generated SQL:\n%s", src)
 	}
 }
+
+func TestEmitSQLAsComment(t *testing.T) {
+	root := t.TempDir()
+	qdir := filepath.Join(root, "queries")
+	mdir := filepath.Join(root, "models")
+	outdir := filepath.Join(root, "gen")
+	for _, d := range []string{qdir, mdir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(mdir, "user.go"), []byte(userModel), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stub := `package queries
+
+import (
+	"context"
+
+	"github.com/vorzela/vorm/query"
+)
+
+// vorm:query name=GetByEmail
+func GetByEmail(ctx context.Context, db query.DB, email string) (*User, error) {
+	return Users.Where("email", email).First(ctx, db)
+}
+`
+	if err := os.WriteFile(filepath.Join(qdir, "q.go"), []byte(stub), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Run(&Options{
+		QueryDir: qdir, OutDir: outdir, ModelDir: mdir,
+		Package: "gen", Dialect: "postgres", Driver: "pgx",
+		EmitSQLAsComment: true,
+	}); err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	src := readSQLGo(t, outdir)
+	wants(t, src,
+		"// GetByEmail\n//\n//\tSELECT",
+		`FROM "users"`,
+		`"email" = $1`,
+		`func GetByEmail(`,
+	)
+	off := lower(t, "postgres", `// vorm:query name=GetOff
+func GetOff(ctx context.Context, db query.DB, email string) (*User, error) {
+	return Users.Where("email", email).First(ctx, db)
+}
+`)
+	if strings.Contains(off, "// GetOff\n//\n//\tSELECT") {
+		t.Fatalf("emit_sql_as_comment defaults off:\n%s", off)
+	}
+}

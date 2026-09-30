@@ -18,6 +18,10 @@ type Options struct {
 	ModelPackage string // models package name used in types (default models)
 	Dialect      string // postgres|mysql|mariadb
 	Driver       string // pgx (default) | pq — documented in generated header
+
+	// EmitSQLAsComment writes the generated SQL as a block comment above each
+	// function (sqlc emit_sql_as_comment). Defaults to false.
+	EmitSQLAsComment bool
 }
 
 // Result summarizes generation.

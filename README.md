@@ -265,6 +265,7 @@ vorm config lint
 
 ## Further reading
 
+- [`CHANGELOG.md`](CHANGELOG.md) — release history
 - [`docs/API.md`](docs/API.md) — catalog of every CLI command and Go API
 - [`docs/USAGE.md`](docs/USAGE.md) — end-to-end usage guide, from install to recipes
 - [`docs/MIGRATIONS.md`](docs/MIGRATIONS.md) — file format, locks, prerequisites
