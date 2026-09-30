@@ -56,9 +56,10 @@ vorm config          # effective values and their source
 vorm config lint     # catch typos and bad combinations
 ```
 
-Keep `DATABASE_URL` in the environment rather than in the config file; the
-environment always wins, which is what makes the same config work in CI and
-production. Legacy `.vorm` KEY=value still loads when no YAML is present.
+Keep `DATABASE_URL` in the environment or a local `.env` (vorm loads `.env`
+automatically and never overrides already-exported vars). Prefer that over
+putting credentials in `vorm.yaml`. Legacy `.vorm` KEY=value still loads when
+no YAML is present.
 
 ### `vorm.yaml` reference
 

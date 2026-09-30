@@ -16,6 +16,7 @@ import (
 )
 
 func main() {
+	_ = config.LoadDotEnv(".")
 	if len(os.Args) < 2 {
 		usage()
 		os.Exit(2)
@@ -69,7 +70,7 @@ func main() {
 			fatal(err)
 		}
 	case "version", "--version":
-		fmt.Println("vorm 0.2.9 (Vorzela v3)")
+		fmt.Println("vorm 0.2.10 (Vorzela v3)")
 	case "help", "--help", "-h":
 		usage()
 	default:

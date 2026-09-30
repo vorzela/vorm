@@ -20,7 +20,7 @@ func loadSchema(ctx context.Context, cfg *config.Config, dsn string) (*introspec
 		url = cfg.ResolveDatabaseURL()
 	}
 	if url == "" {
-		return nil, fmt.Errorf("no database connection: set DATABASE_URL in the environment, add it to %s, or pass --dsn", config.DefaultFile)
+		return nil, fmt.Errorf("no database connection: set DATABASE_URL in the environment or .env, add it to %s, or pass --dsn", config.DefaultFile)
 	}
 	conn, err := query.Open(ctx, url)
 	if err != nil {

@@ -122,7 +122,7 @@ func cmdMigrate(cmd string, args []string) error {
 		url = cfg.ResolveDatabaseURL()
 	}
 	if url == "" {
-		return fmt.Errorf("no database connection: set DATABASE_URL in the environment, add it to %s, or pass --dsn", config.DefaultFile)
+		return fmt.Errorf("no database connection: set DATABASE_URL in the environment or .env, add it to %s, or pass --dsn", config.DefaultFile)
 	}
 
 	opts := cfg.ToMigrateOptions()

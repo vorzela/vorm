@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.10] — 2026-09-30
+
+### Added
+
+- CLI loads `.env` from the working directory (does not override existing env vars),
+  so `DATABASE_URL` in `.env` works with `vorm generate` / `vorm migrate`.
+
 ## [0.2.9] — 2026-09-30
 
 ### Fixed
@@ -132,10 +139,11 @@ gen:
 - First standalone release: in-process migrations, database-introspected models, and `// vorm:query` stubs lowered to parameterized sqlc-style Go.
 
 ```
-go install github.com/vorzela/vorm/cmd/vorm@v0.2.9
+go install github.com/vorzela/vorm/cmd/vorm@v0.2.10
 ```
 
-[Unreleased]: https://github.com/vorzela/vorm/compare/v0.2.9...HEAD
+[Unreleased]: https://github.com/vorzela/vorm/compare/v0.2.10...HEAD
+[0.2.10]: https://github.com/vorzela/vorm/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/vorzela/vorm/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/vorzela/vorm/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/vorzela/vorm/compare/v0.2.6...v0.2.7
