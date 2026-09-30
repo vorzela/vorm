@@ -1050,6 +1050,26 @@ func lowerBuilderCall(name string, call *ast.CallExpr, st *StubFunc) bool {
 		st.Wheres = prependWhere(st.Wheres, w)
 		return true
 
+	case "HavingRaw":
+		if len(args) < 1 {
+			return false
+		}
+		frag, ok := litString(args[0])
+		if !ok {
+			st.PendingWhy = "HavingRaw needs a literal SQL fragment"
+			return false
+		}
+		if strings.ContainsAny(frag, ";") || strings.Contains(frag, "--") || strings.Contains(frag, "/*") {
+			st.PendingWhy = "HavingRaw rejects ; and SQL comments (injection risk)"
+			return false
+		}
+		w := WhereSpec{Kind: WhereRaw, Raw: frag}
+		for _, a := range args[1:] {
+			w.Args = append(w.Args, exprString(a))
+		}
+		st.Havings = append([]WhereSpec{w}, st.Havings...)
+		return true
+
 	case "WhereHas", "WhereDoesntHave":
 		if len(args) != 1 {
 			st.PendingWhy = name + " closures stay on the runtime builder"

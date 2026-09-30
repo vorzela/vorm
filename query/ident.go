@@ -32,10 +32,16 @@ func SafeIdent(name string) error {
 	return nil
 }
 
-var safeExprRe = regexp.MustCompile(`(?i)^(count|sum|avg|min|max)\(\s*[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?\s*\)$`)
+var safeExprRe = regexp.MustCompile(`(?i)^(count|sum|avg|min|max)\(\s*(\*|([A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?))\s*\)$`)
 
 func safeExpr(s string) bool {
 	return safeExprRe.MatchString(strings.TrimSpace(s))
+}
+
+// IsSafeExpr reports whether s is a whitelisted aggregate expression such as
+// COUNT(*) or SUM(amount). Used by Having and Select validation.
+func IsSafeExpr(s string) bool {
+	return safeExpr(s)
 }
 
 // QuoteIdent dialect-quotes a validated identifier (table or table.column).

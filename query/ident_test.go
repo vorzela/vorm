@@ -15,6 +15,15 @@ func TestSafeIdentRejectsStarAndInjection(t *testing.T) {
 	if err := SafeIdent("users.email"); err != nil {
 		t.Fatal(err)
 	}
+	if err := SafeIdent("COUNT(*)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := SafeIdent("sum(amount)"); err != nil {
+		t.Fatal(err)
+	}
+	if SafeIdent("COUNT(DROP TABLE)") == nil {
+		t.Fatal("expected reject unsafe aggregate")
+	}
 }
 
 func TestCompileQuotesAndParams(t *testing.T) {

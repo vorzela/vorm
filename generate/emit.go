@@ -335,13 +335,33 @@ func validateStubColumns(st StubFunc, ms ModelSpec) error {
 		return nil // can't validate without model
 	}
 	meta := query.Meta{Table: ms.Table, Columns: ms.Columns}
-	for _, w := range append(append([]WhereSpec(nil), st.Wheres...), st.Havings...) {
+	for _, w := range st.Wheres {
 		for _, c := range w.Cols {
 			if err := meta.RequireColumn(c); err != nil {
 				return err
 			}
 		}
 		if w.Kind == WhereExists || w.Kind == WhereRaw || w.Col == "" {
+			continue
+		}
+		if err := meta.RequireColumn(w.Col); err != nil {
+			return err
+		}
+	}
+	for _, w := range st.Havings {
+		for _, c := range w.Cols {
+			if err := meta.RequireColumn(c); err != nil {
+				return err
+			}
+		}
+		if w.Kind == WhereExists || w.Kind == WhereRaw || w.Col == "" {
+			continue
+		}
+		// HAVING may filter on aggregates (COUNT(*), SUM(col)) that are not Meta columns.
+		if query.IsSafeExpr(w.Col) {
+			if err := query.SafeIdent(w.Col); err != nil {
+				return err
+			}
 			continue
 		}
 		if err := meta.RequireColumn(w.Col); err != nil {
@@ -559,8 +579,9 @@ func emitRestoreBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dial
 		return fmt.Errorf("Restore needs a deleted_at column on %q", ms.Table)
 	}
 	st = primaryKeyStub(st, ms)
+	st.OnlyTrashed = true // match Builder.Restore: only rows with deleted_at set
 	return emitUpdateSetBody(b, st, ms, d, hasParams, nil,
-		[]string{quoteIdent(d, "deleted_at") + " = NULL"}, false)
+		[]string{quoteIdent(d, "deleted_at") + " = NULL"}, true)
 }
 
 // emitSmartDeleteBody mirrors Builder.Delete: soft when the model supports it.

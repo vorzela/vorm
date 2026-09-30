@@ -56,18 +56,35 @@ func (b *Builder[T]) GroupBy(cols ...string) *Builder[T] {
 	return b
 }
 
-// Having adds HAVING predicate (same forms as Where).
+// Having adds a HAVING predicate. Accepts the same forms as Where, plus safe
+// aggregate expressions (COUNT(*), SUM(amount), …) which are not in Meta.Columns.
 func (b *Builder[T]) Having(args ...any) *Builder[T] {
 	p, err := parseWhere(args...)
 	if err != nil {
 		b.havings = append(b.havings, pred{col: "__error__", op: "=", arg: err.Error()})
 		return b
 	}
-	if err := b.validatePred(p); err != nil {
+	if err := b.validateHavingPred(p); err != nil {
 		b.havings = append(b.havings, pred{col: "__error__", op: "=", arg: err.Error()})
 		return b
 	}
 	b.havings = append(b.havings, p)
+	return b
+}
+
+// HavingRaw adds a HAVING fragment with bound args only (mirrors WhereRaw).
+// SECURITY: fragment must not embed user input — pass values via args.
+// Rejects semicolons and comment markers.
+func (b *Builder[T]) HavingRaw(fragment string, args ...any) *Builder[T] {
+	if strings.ContainsAny(fragment, ";") || strings.Contains(fragment, "--") || strings.Contains(fragment, "/*") {
+		b.havings = append(b.havings, pred{col: "__error__", op: "=", arg: "vorm/query: HavingRaw rejects ; or SQL comments (injection risk)"})
+		return b
+	}
+	b.havings = append(b.havings, pred{
+		col: "__raw__",
+		op:  fragment,
+		arg: args,
+	})
 	return b
 }
 

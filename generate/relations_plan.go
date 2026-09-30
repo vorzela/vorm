@@ -238,21 +238,33 @@ func belongsToManyPlan(pivot introspect.Table, own, other introspect.ForeignKey)
 }
 
 func uniquePair(t introspect.Table, a, b string) bool {
-	la, lb := strings.ToLower(a), strings.ToLower(b)
-	pair := func(cols []string) bool {
-		if len(cols) != 2 {
+	return uniqueCols(t, a, b)
+}
+
+// uniqueCols reports whether t has a unique/PK constraint on exactly the given
+// columns (order-independent). Partial and expression indexes do not qualify.
+func uniqueCols(t introspect.Table, cols ...string) bool {
+	want := make(map[string]struct{}, len(cols))
+	for _, c := range cols {
+		want[strings.ToLower(c)] = struct{}{}
+	}
+	same := func(have []string) bool {
+		if len(have) != len(want) {
 			return false
 		}
-		c0, c1 := strings.ToLower(cols[0]), strings.ToLower(cols[1])
-		return (c0 == la && c1 == lb) || (c0 == lb && c1 == la)
+		for _, c := range have {
+			if _, ok := want[strings.ToLower(c)]; !ok {
+				return false
+			}
+		}
+		return true
 	}
-	// ON CONFLICT (a, b) is valid only for a unique constraint on exactly those
-	// two columns. Partial and expression indexes do not qualify.
-	if pair(t.PrimaryKey) {
+	// ON CONFLICT (cols…) is valid only for a unique constraint on exactly those columns.
+	if same(t.PrimaryKey) {
 		return true
 	}
 	for _, idx := range t.Indexes {
-		if !idx.Unique || idx.Partial || idx.Expression || !pair(idx.Columns) {
+		if !idx.Unique || idx.Partial || idx.Expression || !same(idx.Columns) {
 			continue
 		}
 		return true
@@ -364,7 +376,7 @@ func addMorphToMany(add func(relPlan), pivot introspect.Table, fk introspect.For
 			PivotRelatedKey: fk.Columns[0],
 			PivotCreatedAt:  tableHasColumn(pivot, "created_at"),
 			PivotUpdatedAt:  tableHasColumn(pivot, "updated_at"),
-			PivotUnique:     uniquePair(pivot, morph.idCol, fk.Columns[0]),
+			PivotUnique:     uniqueCols(pivot, morph.idCol, fk.Columns[0], morph.typeCol),
 			MorphType:       other.Name,
 			MorphTypeColumn: morph.typeCol,
 			MorphIDColumn:   morph.idCol,
@@ -383,7 +395,7 @@ func addMorphToMany(add func(relPlan), pivot introspect.Table, fk introspect.For
 			PivotRelatedKey: morph.idCol,
 			PivotCreatedAt:  tableHasColumn(pivot, "created_at"),
 			PivotUpdatedAt:  tableHasColumn(pivot, "updated_at"),
-			PivotUnique:     uniquePair(pivot, morph.idCol, fk.Columns[0]),
+			PivotUnique:     uniqueCols(pivot, morph.idCol, fk.Columns[0], morph.typeCol),
 			MorphType:       other.Name,
 			MorphTypeColumn: morph.typeCol,
 			MorphIDColumn:   morph.idCol,

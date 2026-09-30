@@ -551,8 +551,8 @@ func (pl *planner) deletePlan() (*plan, error) {
 }
 
 // updatePlan compiles UPDATE … SET … WHERE … for Update/SoftDelete/Restore.
-// applySoft keeps already soft-deleted rows out of the update, matching
-// Builder.Update and Builder.SoftDelete.
+// applySoft applies the soft-delete filter via writeWhere (IS NULL, or
+// IS NOT NULL when OnlyTrashed — used by Restore).
 func (pl *planner) updatePlan(sets []KVSpec, rawSets []string, applySoft bool) (*plan, error) {
 	tableQ, err := pl.quote(pl.ms.Table)
 	if err != nil {

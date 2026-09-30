@@ -720,7 +720,7 @@ func SoftDeleteUser(ctx context.Context, db query.DB, arg SoftDeleteUserParams) 
 
 // RestoreUser is generated from // vorm:query in users.go
 func RestoreUser(ctx context.Context, db query.DB, arg RestoreUserParams) (int64, error) {
-	const restoreUserSQL = `UPDATE "users" SET "deleted_at" = NULL WHERE "id" = $1`
+	const restoreUserSQL = `UPDATE "users" SET "deleted_at" = NULL WHERE "id" = $1 AND "deleted_at" IS NOT NULL`
 	res, err := db.ExecContext(ctx, restoreUserSQL, arg.Id)
 	if err != nil {
 		return 0, err

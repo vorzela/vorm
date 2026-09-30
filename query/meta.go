@@ -208,6 +208,11 @@ func (e *Entity[T]) WhereRaw(fragment string, args ...any) *Builder[T] {
 	return e.New().WhereRaw(fragment, args...)
 }
 
+// HavingRaw adds a HAVING fragment whose ? markers are bound arguments.
+func (e *Entity[T]) HavingRaw(fragment string, args ...any) *Builder[T] {
+	return e.New().HavingRaw(fragment, args...)
+}
+
 // WhereFullText filters a tsvector / FULLTEXT column.
 func (e *Entity[T]) WhereFullText(col, q string) *Builder[T] {
 	return e.New().WhereFullText(col, q)
@@ -227,11 +232,12 @@ func LookupMeta[T any]() (Meta, bool) {
 }
 
 // From starts a builder with ad-hoc meta (prefer Model[T] for apps).
+// Soft deletes are off by default; set SoftDeletes on a Model[T] Meta when needed.
 func From[T any](table string, columns ...string) *Builder[T] {
 	if len(columns) == 0 {
 		panic("vorm/query: From requires explicit columns (no SELECT *)")
 	}
-	return newBuilder[T](Meta{Table: table, Columns: columns, PrimaryKey: "id", SoftDeletes: true})
+	return newBuilder[T](Meta{Table: table, Columns: columns, PrimaryKey: "id", SoftDeletes: false})
 }
 
 func qualifyColumns(table string, cols []string) string {

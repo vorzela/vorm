@@ -171,6 +171,8 @@ func quoteIdentList(d Dialect, cols []string) ([]string, error) {
 }
 
 // FirstOrCreate finds by attrs or inserts attrs merged with values.
+// Concurrent callers can both miss and insert unless the lookup columns have a
+// unique index (or the insert is otherwise conflict-safe).
 func (b *Builder[T]) FirstOrCreate(ctx context.Context, db DB, attrs map[string]any, values ...map[string]any) (*T, error) {
 	cp := b.clone()
 	for _, k := range sortedKeys(attrs) {
@@ -197,6 +199,9 @@ func (b *Builder[T]) FirstOrCreate(ctx context.Context, db DB, attrs map[string]
 }
 
 // UpdateOrCreate finds by attrs and updates, or inserts attrs merged with values.
+// Concurrent callers can both miss and insert unless the lookup columns have a
+// unique index (or the insert is otherwise conflict-safe). Prefer Upsert when
+// a unique constraint is available.
 func (b *Builder[T]) UpdateOrCreate(ctx context.Context, db DB, attrs, values map[string]any) (*T, error) {
 	cp := b.clone()
 	for _, k := range sortedKeys(attrs) {

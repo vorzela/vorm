@@ -225,6 +225,7 @@ PostgreSQL-only.
 .RightJoin(...)
 .GroupBy("status")
 .Having("COUNT(*)", ">", 5)
+.HavingRaw("SUM(age) > ?", 100)
 .LockForUpdate()   // FOR UPDATE
 .ForUpdate()       // alias
 .LockForShare()
@@ -316,8 +317,8 @@ columns (`Meta.Generated`) are omitted from inserts.
 | `Increment(ctx, db, col, amount...)` | `(int64, error)` | Default amount `1` |
 | `Decrement(ctx, db, col, amount...)` | `(int64, error)` | |
 | `Upsert(ctx, db, rows, uniqueCols, updateCols)` | `(int64, error)` | `ON CONFLICT` / `ON DUPLICATE KEY` |
-| `FirstOrCreate(ctx, db, attrs, values...)` | `(*T, error)` | Select, then insert |
-| `UpdateOrCreate(ctx, db, attrs, values)` | `(*T, error)` | Select, then update or insert |
+| `FirstOrCreate(ctx, db, attrs, values...)` | `(*T, error)` | Select, then insert (needs a unique index on lookup cols under concurrency) |
+| `UpdateOrCreate(ctx, db, attrs, values)` | `(*T, error)` | Select, then update or insert (same uniqueness caveat; prefer `Upsert` when possible) |
 
 Entity shortcuts:
 

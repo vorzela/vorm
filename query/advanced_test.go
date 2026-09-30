@@ -49,6 +49,61 @@ func TestCompileDistinctOnGroupBy(t *testing.T) {
 	}
 }
 
+func TestHavingAllowsAggregateExpressions(t *testing.T) {
+	Users := Model[struct{}](Meta{Table: "users", Columns: []string{"id", "team_id", "age"}})
+	sql, args, err := Users.New().
+		Select("team_id").
+		GroupBy("team_id").
+		Having("COUNT(*)", ">", 5).
+		CompileSelect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sql, `GROUP BY "team_id"`) || !strings.Contains(sql, `HAVING COUNT(*) > $1`) {
+		t.Fatalf("aggregate having:\n%s", sql)
+	}
+	if len(args) != 1 || args[0] != 5 {
+		t.Fatalf("args=%v", args)
+	}
+
+	sql, args, err = Users.New().
+		GroupBy("team_id").
+		Having("SUM(age)", ">", 100).
+		CompileSelect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sql, `HAVING SUM(age) > $1`) {
+		t.Fatalf("sum having:\n%s", sql)
+	}
+
+	_, _, err = Users.New().Having("COUNT(DROP TABLE)", ">", 1).CompileSelect()
+	if err == nil {
+		t.Fatal("unsafe aggregate must fail")
+	}
+}
+
+func TestHavingRaw(t *testing.T) {
+	Users := Model[struct{}](Meta{Table: "users", Columns: []string{"id", "team_id"}})
+	sql, args, err := Users.New().
+		GroupBy("team_id").
+		HavingRaw("COUNT(*) >= ? AND COUNT(*) < ?", 5, 10).
+		CompileSelect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sql, `HAVING (COUNT(*) >= $1 AND COUNT(*) < $2)`) {
+		t.Fatalf("having raw:\n%s", sql)
+	}
+	if len(args) != 2 || args[0] != 5 || args[1] != 10 {
+		t.Fatalf("args=%v", args)
+	}
+	_, _, err = Users.New().HavingRaw("COUNT(*); DROP TABLE users").CompileSelect()
+	if err == nil {
+		t.Fatal("HavingRaw must reject ;")
+	}
+}
+
 func TestCompileWhereExists(t *testing.T) {
 	Users := Model[struct{}](Meta{Table: "users", Columns: []string{"id"}})
 	sql, args, err := Users.New().

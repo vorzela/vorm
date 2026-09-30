@@ -184,7 +184,7 @@ func TestMorphToManyAttachIncludesType(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := db.statements()[0]
-	want := `INSERT INTO "taggables" ("taggable_id", "tag_id", "taggable_type") VALUES ($1, $2, $3) ON CONFLICT ("taggable_id", "tag_id") DO NOTHING`
+	want := `INSERT INTO "taggables" ("taggable_id", "tag_id", "taggable_type") VALUES ($1, $2, $3) ON CONFLICT ("taggable_id", "tag_id", "taggable_type") DO NOTHING`
 	if got.SQL != want {
 		t.Fatalf("morph attach:\n got: %s\nwant: %s", got.SQL, want)
 	}

@@ -348,7 +348,12 @@ func toAnySlice(v any) ([]any, bool) {
 }
 
 func (b *Builder[T]) checkWhereErrors() error {
-	for _, p := range append(b.wheres, b.havings...) {
+	for _, p := range b.wheres {
+		if p.col == "__error__" {
+			return fmt.Errorf("%v", p.arg)
+		}
+	}
+	for _, p := range b.havings {
 		if p.col == "__error__" {
 			return fmt.Errorf("%v", p.arg)
 		}
@@ -806,6 +811,7 @@ func (b *Builder[T]) ForceDelete(ctx context.Context, db DB) (int64, error) {
 }
 
 // Restore clears deleted_at for soft-deleted rows matching WHERE.
+// Only rows with deleted_at IS NOT NULL are updated (same filter as OnlyTrashed).
 func (b *Builder[T]) Restore(ctx context.Context, db DB) (int64, error) {
 	if !b.meta.SoftDeletes {
 		return 0, validationErr("restore", b.meta.Table, "table has no deleted_at column")
@@ -819,7 +825,8 @@ func (b *Builder[T]) Restore(ctx context.Context, db DB) (int64, error) {
 		return 0, err
 	}
 	cp := *b
-	cp.soft = false // target the rows that ARE deleted
+	cp.soft = false
+	cp.onlyTrashed = true // target rows that ARE deleted, not the whole table
 	whereSQL, args, err := cp.compileWhere(1)
 	if err != nil {
 		return 0, err

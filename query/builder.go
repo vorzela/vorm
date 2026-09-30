@@ -188,6 +188,25 @@ func (b *Builder[T]) validatePred(p pred) error {
 	if err := b.meta.RequireColumn(p.col); err != nil {
 		return err
 	}
+	return b.validatePredOpValue(p)
+}
+
+// validateHavingPred allows Meta columns (like Where) and safe aggregate
+// expressions (COUNT(*), SUM(amount), …) that HAVING is meant to filter on.
+func (b *Builder[T]) validateHavingPred(p pred) error {
+	if strings.HasPrefix(p.col, "__") {
+		return nil
+	}
+	if safeExpr(p.col) {
+		if err := SafeIdent(p.col); err != nil {
+			return err
+		}
+		return b.validatePredOpValue(p)
+	}
+	return b.validatePred(p)
+}
+
+func (b *Builder[T]) validatePredOpValue(p pred) error {
 	op := strings.ToUpper(p.op)
 	if op == "" {
 		op = "="
@@ -198,6 +217,9 @@ func (b *Builder[T]) validatePred(p pred) error {
 	// ILIKE is Postgres-only; on MySQL/MariaDB map or reject at compile — reject here for safety.
 	if (op == "ILIKE" || op == "NOT ILIKE") && b.dialect == DialectMySQL {
 		return fmt.Errorf("vorm/query: %s is PostgreSQL-only; use LIKE on MySQL/MariaDB", op)
+	}
+	if safeExpr(p.col) {
+		return nil // aggregates are not typed Meta columns
 	}
 	switch op {
 	case "IS NULL", "IS NOT NULL":

@@ -185,7 +185,7 @@ func TopAuthors(ctx context.Context, db query.DB) ([]User, error) {
 		Select("id", "email").
 		Where("active", true).
 		GroupBy("id").
-		Having("age", ">", 1).
+		Having("COUNT(*)", ">", 5).
 		OrderByDesc("email").
 		Get(ctx, db)
 }
@@ -195,9 +195,19 @@ func TopAuthors(ctx context.Context, db query.DB) ([]User, error) {
 		`SELECT "users"."id", "users"."email"`,
 		`WHERE "users"."active" = $1`,
 		`GROUP BY "users"."id"`,
-		`HAVING "users"."age" > $2`,
+		`HAVING COUNT(*) > $2`,
 		`ORDER BY "users"."email" DESC`,
 	)
+}
+
+func TestLowerHavingRaw(t *testing.T) {
+	src := lower(t, "postgres", `
+// vorm:query name=Busy
+func Busy(ctx context.Context, db query.DB, min int64) ([]User, error) {
+	return Users.New().GroupBy("id").HavingRaw("COUNT(*) > ?", min).Get(ctx, db)
+}
+`)
+	wants(t, src, `HAVING (COUNT(*) > $1)`)
 }
 
 func TestLowerDynamicInBindsEveryElement(t *testing.T) {
@@ -411,6 +421,11 @@ func Restore(ctx context.Context, db query.DB, id int64) (int64, error) {
 	return Users.Where("id", id).Restore(ctx, db)
 }
 
+// vorm:query name=RestoreAll
+func RestoreAll(ctx context.Context, db query.DB) (int64, error) {
+	return Users.New().Restore(ctx, db)
+}
+
 // vorm:query name=Force
 func Force(ctx context.Context, db query.DB, id int64) (int64, error) {
 	return Users.ForceDelete(ctx, db, id)
@@ -418,7 +433,8 @@ func Force(ctx context.Context, db query.DB, id int64) (int64, error) {
 `)
 	wants(t, src,
 		`UPDATE "users" SET "deleted_at" = CURRENT_TIMESTAMP WHERE "id" = $1 AND "deleted_at" IS NULL`,
-		`UPDATE "users" SET "deleted_at" = NULL WHERE "id" = $1`,
+		`UPDATE "users" SET "deleted_at" = NULL WHERE "id" = $1 AND "deleted_at" IS NOT NULL`,
+		`UPDATE "users" SET "deleted_at" = NULL WHERE "deleted_at" IS NOT NULL`,
 		`DELETE FROM "users" WHERE "id" = $1`,
 	)
 }

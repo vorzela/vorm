@@ -18,7 +18,7 @@ type BelongsToManyAssoc struct {
 	CreatedAt       bool // INSERT CURRENT_TIMESTAMP when the pivot has created_at
 	UpdatedAt       bool // INSERT CURRENT_TIMESTAMP when the pivot has updated_at
 	Timestamps      bool // shorthand for CreatedAt+UpdatedAt
-	UniquePair      bool // emit ON CONFLICT / INSERT IGNORE only when those two FKs are unique
+	UniquePair      bool // emit ON CONFLICT / INSERT IGNORE when the pivot FKs (+ morph type) are unique
 	Dialect         Dialect
 	MorphType       string
 	MorphTypeColumn string
@@ -142,7 +142,11 @@ func (a BelongsToManyAssoc) attachRows(ctx context.Context, db DB, ids []any, ex
 		if d == DialectMySQL {
 			sqlText = "INSERT IGNORE " + strings.TrimPrefix(sqlText, "INSERT ")
 		} else {
-			sqlText += fmt.Sprintf(" ON CONFLICT (%s, %s) DO NOTHING", parentCol, relatedCol)
+			conflict := []string{parentCol, relatedCol}
+			if typeCol != "" {
+				conflict = append(conflict, typeCol)
+			}
+			sqlText += fmt.Sprintf(" ON CONFLICT (%s) DO NOTHING", strings.Join(conflict, ", "))
 		}
 	}
 

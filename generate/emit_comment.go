@@ -124,8 +124,10 @@ func previewSQL(st StubFunc, ms ModelSpec, d query.Dialect, hasParams bool) []st
 		}
 		return []string{p.commentSQL(d)}
 	case "Restore":
-		p, err := newPlanner(primaryKeyStub(st, ms), ms, d, bind).updatePlan(nil,
-			[]string{quoteIdent(d, "deleted_at") + " = NULL"}, false)
+		st = primaryKeyStub(st, ms)
+		st.OnlyTrashed = true
+		p, err := newPlanner(st, ms, d, bind).updatePlan(nil,
+			[]string{quoteIdent(d, "deleted_at") + " = NULL"}, true)
 		if err != nil {
 			return nil
 		}

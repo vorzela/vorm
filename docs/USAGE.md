@@ -255,6 +255,7 @@ Filters:
 .OrWhere("role", "admin")
 .Join("posts", "posts.user_id = users.id")
 .GroupBy("status").Having("COUNT(*)", ">", 5)
+.HavingRaw("SUM(age) > ?", 100)
 ```
 
 ### Type safety
@@ -445,6 +446,9 @@ _, err = models.Users.Where("id", id).Increment(ctx, db, "age", 1)
 _, err = models.Users.Upsert(ctx, db, []map[string]any{{"email": e, "name": n}}, []string{"email"}, []string{"name"})
 row, err := models.Users.FirstOrCreate(ctx, db, map[string]any{"email": e}, map[string]any{"name": n})
 ```
+
+`FirstOrCreate` / `UpdateOrCreate` are select-then-write: under concurrency they need a
+unique index on the lookup columns (or use `Upsert`).
 
 `WhereHas` / `WithCount` are correlated subqueries, not N+1:
 

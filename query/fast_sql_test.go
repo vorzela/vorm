@@ -2,6 +2,7 @@ package query
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -160,6 +161,152 @@ func TestOnlyTrashedSQL(t *testing.T) {
 	if sql != `SELECT "id", "email", "age", "deleted_at" FROM "users" WHERE "deleted_at" IS NOT NULL` {
 		t.Fatalf("onlyTrashed: %s", sql)
 	}
+}
+
+func TestFromDoesNotAssumeSoftDeletes(t *testing.T) {
+	sql, _, err := From[fastUser]("items", "id", "name").CompileSelect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(sql, "deleted_at") {
+		t.Fatalf("From must not filter deleted_at by default: %s", sql)
+	}
+	want := `SELECT "id", "name" FROM "items"`
+	if sql != want {
+		t.Fatalf("got %q want %q", sql, want)
+	}
+}
+
+func TestRestoreTargetsOnlyTrashed(t *testing.T) {
+	Users := Model[fastUser](Meta{
+		Table: "users", Columns: []string{"id", "email", "age", "deleted_at"}, SoftDeletes: true,
+	})
+	db := &fakeDB{execRes: fakeResult{affected: 2}}
+	n, err := Users.New().Restore(context.Background(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("affected=%d", n)
+	}
+	got := db.statements()[0].SQL
+	want := `UPDATE "users" SET "deleted_at" = NULL WHERE "deleted_at" IS NOT NULL`
+	if got != want {
+		t.Fatalf("restore:\n got: %s\nwant: %s", got, want)
+	}
+
+	db2 := &fakeDB{execRes: fakeResult{affected: 1}}
+	_, err = Users.Where("id", 3).Restore(context.Background(), db2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = db2.statements()[0].SQL
+	want = `UPDATE "users" SET "deleted_at" = NULL WHERE "id" = $1 AND "deleted_at" IS NOT NULL`
+	if got != want {
+		t.Fatalf("restore with where:\n got: %s\nwant: %s", got, want)
+	}
+}
+
+// TestRestoreNoWhereOnlyFlipsTrashed is the mass-update regression: Restore() with
+// no other WHERE on a mixed table must clear deleted_at only on trashed rows.
+func TestRestoreNoWhereOnlyFlipsTrashed(t *testing.T) {
+	type softUser struct {
+		ID        int64  `db:"id"`
+		Email     string `db:"email"`
+		DeletedAt *int   `db:"deleted_at"`
+	}
+	Users := Model[softUser](Meta{
+		Table: "users", Columns: []string{"id", "email", "deleted_at"}, SoftDeletes: true,
+	})
+	db := &softRestoreDB{rows: []softRestoreRow{
+		{id: 1, trashed: false},
+		{id: 2, trashed: true},
+		{id: 3, trashed: false},
+		{id: 4, trashed: true},
+		{id: 5, trashed: false},
+	}}
+	beforeLive := map[int64]bool{1: true, 3: true, 5: true}
+
+	n, err := Users.New().Restore(context.Background(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("affected=%d want 2 (only trashed); SQL=%s", n, db.sql)
+	}
+	if db.sql != `UPDATE "users" SET "deleted_at" = NULL WHERE "deleted_at" IS NOT NULL` {
+		t.Fatalf("restore SQL:\n got: %s", db.sql)
+	}
+	for _, r := range db.rows {
+		if beforeLive[r.id] {
+			if r.trashed {
+				t.Fatalf("live row %d became trashed", r.id)
+			}
+			continue
+		}
+		if r.trashed {
+			t.Fatalf("trashed row %d was not restored", r.id)
+		}
+	}
+}
+
+type softRestoreRow struct {
+	id      int64
+	trashed bool
+}
+
+// softRestoreDB applies Restore-style UPDATEs against an in-memory soft-delete table.
+// Without "deleted_at IS NOT NULL", a bare UPDATE matches every row (the pre-fix bug).
+type softRestoreDB struct {
+	rows []softRestoreRow
+	sql  string
+}
+
+func (d *softRestoreDB) QueryContext(context.Context, string, ...any) (Rows, error) {
+	return nil, fmt.Errorf("softRestoreDB: QueryContext unused")
+}
+func (d *softRestoreDB) QueryRowContext(context.Context, string, ...any) Row {
+	return errRow{fmt.Errorf("softRestoreDB: QueryRowContext unused")}
+}
+
+func (d *softRestoreDB) ExecContext(_ context.Context, sqlText string, args ...any) (Result, error) {
+	d.sql = sqlText
+	if !strings.Contains(sqlText, `SET "deleted_at" = NULL`) {
+		return nil, fmt.Errorf("unexpected SQL: %s", sqlText)
+	}
+	onlyTrashed := strings.Contains(sqlText, `"deleted_at" IS NOT NULL`)
+	var idFilter *int64
+	if strings.Contains(sqlText, `"id" =`) && len(args) > 0 {
+		if v, ok := args[0].(int64); ok {
+			idFilter = &v
+		}
+	}
+	var n int64
+	for i := range d.rows {
+		r := &d.rows[i]
+		if idFilter != nil && r.id != *idFilter {
+			continue
+		}
+		if onlyTrashed && !r.trashed {
+			continue
+		}
+		// No soft filter and no WHERE ⇒ match all rows (bug shape).
+		if !onlyTrashed && !strings.Contains(sqlText, "WHERE") {
+			r.trashed = false
+			n++
+			continue
+		}
+		if !onlyTrashed && idFilter != nil {
+			r.trashed = false
+			n++
+			continue
+		}
+		if onlyTrashed {
+			r.trashed = false
+			n++
+		}
+	}
+	return fakeResult{affected: n}, nil
 }
 
 func TestWhereHasAndWithCountSQL(t *testing.T) {

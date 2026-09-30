@@ -556,6 +556,9 @@ func TestModelsFromSchemaMorphToMany(t *testing.T) {
 					col("taggable_id", "int8", 3),
 					col("taggable_type", "varchar", 4),
 				},
+				Indexes: []introspect.Index{
+					{Name: "taggables_morph_unique", Columns: []string{"taggable_id", "tag_id", "taggable_type"}, Unique: true},
+				},
 				ForeignKeys: []introspect.ForeignKey{
 					{Columns: []string{"tag_id"}, RefTable: "tags", RefColumns: []string{"id"}},
 				},
@@ -574,6 +577,9 @@ func TestModelsFromSchemaMorphToMany(t *testing.T) {
 	}
 	if !strings.Contains(rels, `MorphType: "posts"`) || !strings.Contains(rels, `MorphTypeColumn: "taggable_type"`) {
 		t.Errorf("morph type column missing:\n%s", rels)
+	}
+	if !strings.Contains(rels, "UniquePair: true") {
+		t.Errorf("morph unique (parent, related, type) should set UniquePair:\n%s", rels)
 	}
 	post := readGenerated(t, dir, "post_gen.go")
 	if !strings.Contains(normalizeWS(post), "Tags []Tag") {
