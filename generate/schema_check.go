@@ -129,7 +129,7 @@ func FormatSchemaDrift(drifts []SchemaDrift) string {
 // CheckModelsDir parses models/ and diffs against schema. Returns a non-nil
 // error when any drift is found.
 func CheckModelsDir(modelDir string, schema *introspect.Schema, dialect query.Dialect) error {
-	models, err := parseModelsDir(modelDir)
+	models, err := ParseModelsDir(modelDir)
 	if err != nil {
 		return err
 	}

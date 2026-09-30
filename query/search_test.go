@@ -86,6 +86,9 @@ func TestWhereFullTextAndJsonContainsSQL(t *testing.T) {
 	if sql != `SELECT "id", "search_vector", "metadata" FROM "users" WHERE "metadata" @> $1::jsonb` {
 		t.Fatalf("json: %s", sql)
 	}
+	if len(args) != 1 || args[0] != `{"role":"admin"}` {
+		t.Fatalf("json args=%v", args)
+	}
 
 	Users = Model[struct{}](Meta{
 		Table:   "users",

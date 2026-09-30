@@ -407,7 +407,7 @@ func emitPageScan(b *strings.Builder, rowT, capExpr string) error {
 
 func emitPluckBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dialect, hasParams bool) error {
 	if len(st.Selects) == 0 {
-		return fmt.Errorf("Pluck needs a column")
+		return fmt.Errorf("pluck needs a column")
 	}
 	pl := newPlanner(st, ms, d, binder(st, hasParams))
 	p, err := pl.selectPlan(st.Selects, selectRows)
@@ -506,20 +506,4 @@ func passthroughBinder(bind func(string) string, locals ...string) func(string) 
 		}
 		return bind(expr)
 	}
-}
-
-// planIsDynamic reports whether a stub needs runtime SQL assembly, which
-// decides whether the generated file imports strings.
-func planIsDynamic(st StubFunc) bool {
-	for _, w := range st.Wheres {
-		if w.Kind == WhereInSlice {
-			return true
-		}
-	}
-	for _, w := range st.Havings {
-		if w.Kind == WhereInSlice {
-			return true
-		}
-	}
-	return false
 }

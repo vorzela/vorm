@@ -292,17 +292,6 @@ func pendingTypedReturn(st StubFunc) string {
 	}
 }
 
-func bindExprs(exprs []string, st StubFunc, hasParams bool) []string {
-	if !hasParams {
-		return exprs
-	}
-	out := make([]string, len(exprs))
-	for i, e := range exprs {
-		out[i] = bindExpr(e, st)
-	}
-	return out
-}
-
 func bindExpr(expr string, st StubFunc) string {
 	for _, p := range userParams(st) {
 		if expr == p.Name {
@@ -396,88 +385,9 @@ func validateStubColumns(st StubFunc, ms ModelSpec) error {
 	return nil
 }
 
-func emitSignature(st StubFunc, ms ModelSpec, modelPkg string) string {
-	var params []string
-	for _, p := range st.Params {
-		typ := rewriteType(p.Type)
-		if p.Name == "" {
-			params = append(params, typ)
-		} else {
-			params = append(params, p.Name+" "+typ)
-		}
-	}
-	if len(params) == 0 {
-		params = []string{"ctx context.Context", "db query.DB"}
-	}
-	res := st.Results
-	if len(res) == 0 {
-		res = []string{"error"}
-	}
-	for i := range res {
-		res[i] = qualifyModelType(rewriteType(res[i]), ms, modelPkg)
-	}
-	return "(" + strings.Join(params, ", ") + ") (" + strings.Join(res, ", ") + ")"
-}
-
-// qualifyModelType rewrites bare references to the model type so they resolve
-// from the generated package, including inside generics
-// (*query.PageResult[User] → *query.PageResult[models.User]).
-func qualifyModelType(typ string, ms ModelSpec, modelPkg string) string {
-	if ms.TypeName == "" {
-		return typ
-	}
-	pkg := ms.Package
-	if pkg == "" {
-		pkg = modelPkg
-	}
-	if pkg == "" {
-		pkg = DefaultModelPkg
-	}
-	if pkg == "gen" {
-		return typ
-	}
-
-	var b strings.Builder
-	for i := 0; i < len(typ); {
-		if !isIdentStart(typ[i]) {
-			b.WriteByte(typ[i])
-			i++
-			continue
-		}
-		j := i
-		for j < len(typ) && isIdentPart(typ[j]) {
-			j++
-		}
-		word := typ[i:j]
-		qualified := i > 0 && typ[i-1] == '.'
-		selector := j < len(typ) && typ[j] == '.'
-		if word == ms.TypeName && !qualified && !selector {
-			b.WriteString(pkg + ".")
-		}
-		b.WriteString(word)
-		i = j
-	}
-	return b.String()
-}
-
-func isIdentStart(c byte) bool {
-	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-}
-
-func isIdentPart(c byte) bool { return isIdentStart(c) || (c >= '0' && c <= '9') }
-
 func rewriteType(t string) string {
 	// query.DB stays; User → keep if already qualified
 	return t
-}
-
-func resultModelPkg(st StubFunc) string {
-	for _, r := range st.Results {
-		if strings.Contains(r, "models.") {
-			return "models"
-		}
-	}
-	return ""
 }
 
 func pendingReturn(st StubFunc) string {
@@ -515,14 +425,6 @@ func zeroOf(typ string) string {
 	default:
 		return "nil"
 	}
-}
-
-func emitQueryContext(b *strings.Builder, constName string, argExprs []string) {
-	if len(argExprs) == 0 {
-		fmt.Fprintf(b, "\trows, err := db.QueryContext(ctx, %s)\n", constName)
-		return
-	}
-	fmt.Fprintf(b, "\trows, err := db.QueryContext(ctx, %s, %s)\n", constName, joinArgs(argExprs))
 }
 
 func emitCreateBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dialect, hasParams bool) {
@@ -567,7 +469,7 @@ func primaryKeyStub(st StubFunc, ms ModelSpec) StubFunc {
 
 func emitSoftDeleteBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dialect, hasParams bool) error {
 	if !ms.SoftDeletes {
-		return fmt.Errorf("SoftDelete needs a deleted_at column on %q", ms.Table)
+		return fmt.Errorf("soft delete needs a deleted_at column on %q", ms.Table)
 	}
 	st = primaryKeyStub(st, ms)
 	return emitUpdateSetBody(b, st, ms, d, hasParams, nil,
@@ -576,7 +478,7 @@ func emitSoftDeleteBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.D
 
 func emitRestoreBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dialect, hasParams bool) error {
 	if !ms.SoftDeletes {
-		return fmt.Errorf("Restore needs a deleted_at column on %q", ms.Table)
+		return fmt.Errorf("restore needs a deleted_at column on %q", ms.Table)
 	}
 	st = primaryKeyStub(st, ms)
 	st.OnlyTrashed = true // match Builder.Restore: only rows with deleted_at set
@@ -596,30 +498,6 @@ func emitForceDeleteBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.
 	return emitDeleteBody(b, primaryKeyStub(st, ms), ms, d, hasParams)
 }
 
-func modelTypeName(st StubFunc, ms ModelSpec, modelPkg string) string {
-	if st.ModelType != "" {
-		return qualifyModelType(rewriteType(st.ModelType), ms, modelPkg)
-	}
-	if ms.TypeName != "" {
-		pkg := ms.Package
-		if pkg == "" {
-			pkg = modelPkg
-		}
-		if pkg == "" {
-			pkg = "models"
-		}
-		return pkg + "." + ms.TypeName
-	}
-	for _, r := range st.Results {
-		r = strings.TrimPrefix(r, "*")
-		r = strings.TrimPrefix(r, "[]")
-		if r != "error" {
-			return qualifyModelType(r, ms, modelPkg)
-		}
-	}
-	return "struct{}"
-}
-
 func joinArgs(exprs []string) string {
 	if len(exprs) == 0 {
 		return ""
@@ -637,15 +515,6 @@ func placeholders(d query.Dialect, n int) []string {
 		}
 	}
 	return out
-}
-
-func ph(d query.Dialect, n *int) string {
-	if d == query.DialectMySQL {
-		return "?"
-	}
-	s := fmt.Sprintf("$%d", *n)
-	*n++
-	return s
 }
 
 func quoteIdent(d query.Dialect, name string) string {
@@ -688,13 +557,6 @@ func strconvQuote(s string) string {
 	return "`" + strings.ReplaceAll(s, "`", "` + \"`\" + `") + "`"
 }
 
-func strconvUnquote(s string) (string, error) {
-	if len(s) >= 2 && s[0] == '"' {
-		return strings.Trim(s, `"`), nil // simple
-	}
-	return s, fmt.Errorf("not string")
-}
-
 // emitScanners appends scan helpers for *Row types (Get/First).
 func emitScanners(b *strings.Builder, stubs []StubFunc, models map[string]ModelSpec, _ string) {
 	seen := map[string]bool{}
@@ -719,25 +581,4 @@ func emitScanners(b *strings.Builder, stubs []StubFunc, models map[string]ModelS
 		fmt.Fprintf(b, "\terr := rows.Scan(%s)\n", strings.Join(ptrs, ", "))
 		b.WriteString("\treturn row, err\n}\n\n")
 	}
-}
-
-func scanPtrs(ms ModelSpec, cols []string) []string {
-	fieldByCol := map[string]string{}
-	// embedded Model
-	fieldByCol["id"] = "ID"
-	fieldByCol["created_at"] = "CreatedAt"
-	fieldByCol["updated_at"] = "UpdatedAt"
-	fieldByCol["deleted_at"] = "DeletedAt"
-	for _, f := range ms.Fields {
-		fieldByCol[f.Column] = f.Name
-	}
-	var ptrs []string
-	for _, c := range cols {
-		name := fieldByCol[c]
-		if name == "" {
-			name = exportIdent(c)
-		}
-		ptrs = append(ptrs, "&row."+name)
-	}
-	return ptrs
 }

@@ -282,15 +282,3 @@ func From[T any](table string, columns ...string) *Builder[T] {
 	}
 	return newBuilder[T](Meta{Table: table, Columns: columns, PrimaryKey: "id", SoftDeletes: false})
 }
-
-func qualifyColumns(table string, cols []string) string {
-	parts := make([]string, len(cols))
-	for i, c := range cols {
-		if strings.Contains(c, ".") {
-			parts[i] = c
-		} else {
-			parts[i] = fmt.Sprintf("%s.%s", table, c)
-		}
-	}
-	return strings.Join(parts, ", ")
-}

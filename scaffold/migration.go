@@ -160,12 +160,6 @@ func parseAlter(name string) (table, column, action string) {
 	}
 }
 
-// tableFromAlter is kept for tests / callers that only need the table name.
-func tableFromAlter(name string) string {
-	table, _, _ := parseAlter(name)
-	return table
-}
-
 type pivotHint struct {
 	LeftTable, RightTable string
 }

@@ -172,35 +172,3 @@ func (b *Builder[T]) SkipLocked() *Builder[T] {
 
 // ForUpdate is an alias of LockForUpdate.
 func (b *Builder[T]) ForUpdate() *Builder[T] { return b.LockForUpdate() }
-
-func compileJoins(joins []joinClause) string {
-	if len(joins) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	for _, j := range joins {
-		b.WriteString(" ")
-		b.WriteString(j.typ)
-		b.WriteString(" ")
-		b.WriteString(j.table)
-		b.WriteString(" ON ")
-		b.WriteString(j.on)
-	}
-	return b.String()
-}
-
-func qualifySelectList(table string, cols []string, joins bool) string {
-	if !joins {
-		return qualifyColumns(table, cols)
-	}
-	// With joins, leave already-qualified columns alone; qualify bare names with primary table.
-	parts := make([]string, len(cols))
-	for i, c := range cols {
-		if strings.Contains(c, ".") || strings.Contains(c, "(") || strings.Contains(c, " ") {
-			parts[i] = c // expression / already qualified
-		} else {
-			parts[i] = fmt.Sprintf("%s.%s", table, c)
-		}
-	}
-	return strings.Join(parts, ", ")
-}

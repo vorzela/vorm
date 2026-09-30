@@ -154,13 +154,3 @@ func bareColumnName(col string) string {
 	}
 	return col
 }
-
-func needsTimeImport(st StubFunc, ms ModelSpec) bool {
-	for _, col := range resultCols(st, ms) {
-		_, goType := fieldForColumn(ms, col)
-		if strings.Contains(goType, "time.Time") {
-			return true
-		}
-	}
-	return false
-}

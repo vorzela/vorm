@@ -76,6 +76,9 @@ func TestHavingAllowsAggregateExpressions(t *testing.T) {
 	if !strings.Contains(sql, `HAVING SUM(age) > $1`) {
 		t.Fatalf("sum having:\n%s", sql)
 	}
+	if len(args) != 1 || args[0] != 100 {
+		t.Fatalf("args=%v", args)
+	}
 
 	_, _, err = Users.New().Having("COUNT(DROP TABLE)", ">", 1).CompileSelect()
 	if err == nil {
