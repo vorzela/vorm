@@ -114,13 +114,16 @@ func (e *Entity[T]) Upsert(ctx context.Context, db DB, rows []map[string]any, un
 }
 
 // FirstOrCreate finds by attrs or inserts attrs merged with values.
-// See Builder.FirstOrCreate for the concurrency / unique-index caveat.
+// Runtime builder only (not lowered to vorm/gen); recovers from a concurrent
+// unique violation by re-selecting when a unique index is present.
 func (e *Entity[T]) FirstOrCreate(ctx context.Context, db DB, attrs map[string]any, values ...map[string]any) (*T, error) {
 	return e.New().FirstOrCreate(ctx, db, attrs, values...)
 }
 
 // UpdateOrCreate finds by attrs and updates, or inserts attrs merged with values.
-// See Builder.UpdateOrCreate for the concurrency / unique-index caveat.
+// Runtime builder only (not lowered to vorm/gen); recovers from a concurrent
+// unique violation by re-selecting then updating. Prefer Upsert when the
+// conflict target is known.
 func (e *Entity[T]) UpdateOrCreate(ctx context.Context, db DB, attrs, values map[string]any) (*T, error) {
 	return e.New().UpdateOrCreate(ctx, db, attrs, values)
 }

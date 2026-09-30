@@ -447,8 +447,10 @@ _, err = models.Users.Upsert(ctx, db, []map[string]any{{"email": e, "name": n}},
 row, err := models.Users.FirstOrCreate(ctx, db, map[string]any{"email": e}, map[string]any{"name": n})
 ```
 
-`FirstOrCreate` / `UpdateOrCreate` are select-then-write: under concurrency they need a
-unique index on the lookup columns (or use `Upsert`).
+`FirstOrCreate` / `UpdateOrCreate` / `Upsert` stay on the runtime builder (not
+lowered into `vorm/gen`). Generated stubs should use `Create` / `Update` (or
+hand-written `ON CONFLICT` SQL). The builder recovers from a concurrent unique
+violation by re-selecting when a unique index is present.
 
 `WhereHas` / `WithCount` are correlated subqueries, not N+1:
 

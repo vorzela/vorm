@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] — 2026-09-30
+
+### Fixed
+
+- Runtime-builder `FirstOrCreate` / `UpdateOrCreate` (not lowered to `vorm/gen`) recover
+  from a concurrent unique violation by re-selecting (then updating, for
+  `UpdateOrCreate`). A unique index on the lookup columns is still required.
+  Generated stubs should keep using `Create` / `Update` or hand-written
+  `ON CONFLICT` SQL.
+
 ## [0.2.3] — 2026-09-30
 
 ### Added
@@ -19,10 +29,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `From()` no longer defaults `SoftDeletes: true` (ad-hoc queries no longer filter on a missing `deleted_at`).
 - `Restore()` (runtime and generated) only updates rows with `deleted_at IS NOT NULL`, avoiding unbounded full-table restores.
 - Morph `Attach` `ON CONFLICT` includes `MorphTypeColumn` when set; morph pivot planning treats a unique `(parent, related, type)` index as `UniquePair`.
-
-### Changed
-
-- `FirstOrCreate` / `UpdateOrCreate` document the concurrency caveat (unique index on lookup columns; prefer `Upsert` when possible).
 
 ## [0.2.2] — 2026-09-30
 
@@ -80,10 +86,11 @@ gen:
 - First standalone release: in-process migrations, database-introspected models, and `// vorm:query` stubs lowered to parameterized sqlc-style Go.
 
 ```
-go install github.com/vorzela/vorm/cmd/vorm@v0.2.3
+go install github.com/vorzela/vorm/cmd/vorm@v0.2.4
 ```
 
-[Unreleased]: https://github.com/vorzela/vorm/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/vorzela/vorm/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/vorzela/vorm/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/vorzela/vorm/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/vorzela/vorm/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/vorzela/vorm/compare/v0.2.0...v0.2.1

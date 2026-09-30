@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type fastUser struct {
@@ -381,4 +383,136 @@ func TestFirstOrCreateSelectThenInsert(t *testing.T) {
 	if !strings.Contains(st[1].SQL, `INSERT INTO "users"`) {
 		t.Fatalf("insert: %s", st[1].SQL)
 	}
+}
+
+func TestFirstOrCreateReturnsExisting(t *testing.T) {
+	db := (&fakeDB{}).on(`FROM "users"`, []string{"id", "email", "age"}, []any{int64(3), "a@x.io", 21})
+	row, err := fastUsers().FirstOrCreate(context.Background(), db, map[string]any{"email": "a@x.io"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row == nil || row.ID != 3 {
+		t.Fatalf("row=%+v", row)
+	}
+	for _, st := range db.statements() {
+		if strings.Contains(st.SQL, "INSERT") {
+			t.Fatalf("must not insert when row exists: %s", st.SQL)
+		}
+	}
+}
+
+func TestFirstOrCreateRecoversOnUniqueViolation(t *testing.T) {
+	db := &orCreateRaceDB{email: "a@x.io"}
+	row, err := fastUsers().FirstOrCreate(context.Background(), db, map[string]any{"email": "a@x.io"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row == nil || row.ID != 7 || row.Email != "a@x.io" {
+		t.Fatalf("row=%+v", row)
+	}
+	if db.selects < 2 {
+		t.Fatalf("want re-select after conflict, selects=%d", db.selects)
+	}
+	if !db.inserted {
+		t.Fatal("expected insert attempt")
+	}
+}
+
+func TestFirstOrCreateSurfacesNonUniqueInsertError(t *testing.T) {
+	db := &orCreateRaceDB{email: "a@x.io", insertErr: &pgconn.PgError{Code: "23503", ConstraintName: "users_team_fkey"}}
+	_, err := fastUsers().FirstOrCreate(context.Background(), db, map[string]any{"email": "a@x.io"})
+	if err == nil {
+		t.Fatal("expected foreign-key error")
+	}
+	if IsUniqueViolation(err) || !IsForeignKeyViolation(err) {
+		t.Fatalf("want FK violation, got %v (kind=%s)", err, Classify(err))
+	}
+}
+
+func TestUpdateOrCreateRecoversOnUniqueViolation(t *testing.T) {
+	db := &orCreateRaceDB{email: "a@x.io"}
+	row, err := fastUsers().UpdateOrCreate(context.Background(), db,
+		map[string]any{"email": "a@x.io"},
+		map[string]any{"age": 30},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row == nil || row.ID != 7 {
+		t.Fatalf("row=%+v", row)
+	}
+	if !db.updated {
+		t.Fatal("expected update after conflict re-select")
+	}
+}
+
+func TestUpdateOrCreateUpdatesExisting(t *testing.T) {
+	db := (&fakeDB{}).
+		on(`FROM "users"`, []string{"id", "email", "age"}, []any{int64(3), "a@x.io", 21}).
+		on("UPDATE", nil)
+	db.execRes = fakeResult{affected: 1}
+	row, err := fastUsers().UpdateOrCreate(context.Background(), db,
+		map[string]any{"email": "a@x.io"},
+		map[string]any{"age": 40},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row == nil || row.ID != 3 {
+		t.Fatalf("row=%+v", row)
+	}
+	var sawUpdate bool
+	for _, st := range db.statements() {
+		if strings.Contains(st.SQL, "UPDATE") {
+			sawUpdate = true
+			if !strings.Contains(st.SQL, `"age" = $1`) {
+				t.Fatalf("update: %s", st.SQL)
+			}
+		}
+		if strings.Contains(st.SQL, "INSERT") {
+			t.Fatalf("must not insert when row exists: %s", st.SQL)
+		}
+	}
+	if !sawUpdate {
+		t.Fatal("expected UPDATE")
+	}
+}
+
+// orCreateRaceDB: first SELECT misses, INSERT hits unique violation (or insertErr), later SELECTs hit.
+type orCreateRaceDB struct {
+	email     string
+	selects   int
+	inserted  bool
+	updated   bool
+	insertErr error
+}
+
+func (d *orCreateRaceDB) QueryContext(_ context.Context, sqlText string, _ ...any) (Rows, error) {
+	d.selects++
+	if d.selects == 1 {
+		return &fakeRows{cols: []string{"id", "email", "age"}}, nil
+	}
+	return &fakeRows{
+		cols:   []string{"id", "email", "age"},
+		values: [][]any{{int64(7), d.email, 21}},
+	}, nil
+}
+
+func (d *orCreateRaceDB) QueryRowContext(_ context.Context, sqlText string, _ ...any) Row {
+	if strings.Contains(sqlText, "INSERT") {
+		d.inserted = true
+		if d.insertErr != nil {
+			return errRow{d.insertErr}
+		}
+		return errRow{&pgconn.PgError{Code: "23505", ConstraintName: "users_email_key"}}
+	}
+	return errRow{fmt.Errorf("orCreateRaceDB: unexpected QueryRow: %s", sqlText)}
+}
+
+func (d *orCreateRaceDB) ExecContext(_ context.Context, sqlText string, _ ...any) (Result, error) {
+	if strings.Contains(sqlText, "UPDATE") {
+		d.updated = true
+		return fakeResult{affected: 1}, nil
+	}
+	return nil, fmt.Errorf("orCreateRaceDB: unexpected Exec: %s", sqlText)
 }

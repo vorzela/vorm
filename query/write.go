@@ -171,14 +171,15 @@ func quoteIdentList(d Dialect, cols []string) ([]string, error) {
 }
 
 // FirstOrCreate finds by attrs or inserts attrs merged with values.
-// Concurrent callers can both miss and insert unless the lookup columns have a
-// unique index (or the insert is otherwise conflict-safe).
+// Runtime builder only (not lowered to vorm/gen). Under concurrency, put a
+// unique index on the lookup columns: a racing insert surfaces as a unique
+// violation and FirstOrCreate re-selects the winner.
 func (b *Builder[T]) FirstOrCreate(ctx context.Context, db DB, attrs map[string]any, values ...map[string]any) (*T, error) {
-	cp := b.clone()
+	find := b.clone()
 	for _, k := range sortedKeys(attrs) {
-		cp.Where(k, attrs[k])
+		find.Where(k, attrs[k])
 	}
-	row, err := cp.First(ctx, db)
+	row, err := find.First(ctx, db)
 	if err != nil || row != nil {
 		return row, err
 	}
@@ -193,46 +194,60 @@ func (b *Builder[T]) FirstOrCreate(ctx context.Context, db DB, attrs map[string]
 	}
 	id, err := b.Create(ctx, db, merged)
 	if err != nil {
+		if IsUniqueViolation(err) {
+			return find.First(ctx, db)
+		}
 		return nil, err
 	}
 	return b.clone().Where(b.meta.PrimaryKey, id).First(ctx, db)
 }
 
 // UpdateOrCreate finds by attrs and updates, or inserts attrs merged with values.
-// Concurrent callers can both miss and insert unless the lookup columns have a
-// unique index (or the insert is otherwise conflict-safe). Prefer Upsert when
-// a unique constraint is available.
+// Runtime builder only (not lowered to vorm/gen). Under concurrency, put a
+// unique index on the lookup columns: a racing insert surfaces as a unique
+// violation and UpdateOrCreate re-selects then updates. Prefer Upsert when you
+// already know the conflict target columns.
 func (b *Builder[T]) UpdateOrCreate(ctx context.Context, db DB, attrs, values map[string]any) (*T, error) {
-	cp := b.clone()
+	find := b.clone()
 	for _, k := range sortedKeys(attrs) {
-		cp.Where(k, attrs[k])
+		find.Where(k, attrs[k])
 	}
-	row, err := cp.First(ctx, db)
+	row, err := find.First(ctx, db)
 	if err != nil {
 		return nil, err
 	}
-	if row != nil {
-		key := CursorValue(*row, b.meta.PrimaryKey)
-		if key == nil {
-			return nil, validationErr("update", b.meta.Table, "could not read primary key")
+	if row == nil {
+		merged := map[string]any{}
+		for k, v := range attrs {
+			merged[k] = v
 		}
-		if len(values) > 0 {
-			if _, err := b.clone().Where(b.meta.PrimaryKey, key).Update(ctx, db, values); err != nil {
+		for k, v := range values {
+			merged[k] = v
+		}
+		id, err := b.Create(ctx, db, merged)
+		if err != nil {
+			if !IsUniqueViolation(err) {
 				return nil, err
 			}
+			row, err = find.First(ctx, db)
+			if err != nil {
+				return nil, err
+			}
+			if row == nil {
+				return nil, validationErr("update", b.meta.Table, "unique conflict but no matching row for attrs")
+			}
+		} else {
+			return b.clone().Where(b.meta.PrimaryKey, id).First(ctx, db)
 		}
-		return b.clone().Where(b.meta.PrimaryKey, key).First(ctx, db)
 	}
-	merged := map[string]any{}
-	for k, v := range attrs {
-		merged[k] = v
+	key := CursorValue(*row, b.meta.PrimaryKey)
+	if key == nil {
+		return nil, validationErr("update", b.meta.Table, "could not read primary key")
 	}
-	for k, v := range values {
-		merged[k] = v
+	if len(values) > 0 {
+		if _, err := b.clone().Where(b.meta.PrimaryKey, key).Update(ctx, db, values); err != nil {
+			return nil, err
+		}
 	}
-	id, err := b.Create(ctx, db, merged)
-	if err != nil {
-		return nil, err
-	}
-	return b.clone().Where(b.meta.PrimaryKey, id).First(ctx, db)
+	return b.clone().Where(b.meta.PrimaryKey, key).First(ctx, db)
 }
