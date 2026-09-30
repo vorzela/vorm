@@ -78,7 +78,7 @@ func writeModel(dir, pkg string, spec TableSpec) (string, error) {
 			goType = "*" + goType
 		}
 		field := exportIdent(c.Name)
-		fmt.Fprintf(&fields, "\t%s %s `json:%q db:%q`\n", field, goType, c.Name, c.Name)
+		fmt.Fprintf(&fields, "\t%s %s `json:%q db:%q`\n", field, goType, JSONTag(c.Name), c.Name)
 		cols = append(cols, c.Name)
 	}
 	if spec.Timestamps {

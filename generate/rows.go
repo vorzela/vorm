@@ -44,17 +44,20 @@ func emitRowStruct(b *strings.Builder, st StubFunc, ms ModelSpec) {
 	fmt.Fprintf(b, "type %s struct {\n", rowTypeName(st.Name))
 	for _, col := range cols {
 		field, goType := fieldForColumn(ms, col)
-		fmt.Fprintf(b, "\t%s %s `json:%q db:%q`\n", field, goType, bareColumnName(col), bareColumnName(col))
+		tag := JSONTag(bareColumnName(col))
+		fmt.Fprintf(b, "\t%s %s `json:%q db:%q`\n", field, goType, tag, bareColumnName(col))
 	}
 	for _, sub := range st.RelSubselects {
 		alias := strings.ReplaceAll(sub.Name, ".", "_")
 		if sub.Count {
 			alias += "_count"
-			fmt.Fprintf(b, "\t%s int64 `json:%q db:%q`\n", exportIdent(alias), alias, alias)
+			tag := JSONTag(alias)
+			fmt.Fprintf(b, "\t%s int64 `json:%q db:%q`\n", exportIdent(alias), tag, alias)
 			continue
 		}
 		alias += "_exists"
-		fmt.Fprintf(b, "\t%s bool `json:%q db:%q`\n", exportIdent(alias), alias, alias)
+		tag := JSONTag(alias)
+		fmt.Fprintf(b, "\t%s bool `json:%q db:%q`\n", exportIdent(alias), tag, alias)
 	}
 	b.WriteString("}\n\n")
 }

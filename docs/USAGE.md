@@ -42,10 +42,10 @@ export DATABASE_URL="postgres://user:pass@localhost:5432/myapp?sslmode=disable"
 vorm init
 ```
 
-`vorm init` writes `.vorm` with the dialect detected from `DATABASE_URL`:
+`vorm init` writes `vorm.yaml` with the dialect detected from `DATABASE_URL`:
 
 ```
-wrote .vorm (PACKAGE=gen, DIALECT=postgres)
+wrote vorm.yaml (package=gen, dialect=postgres)
 next: export DATABASE_URL=… && vorm migrate && vorm generate
 ```
 
@@ -56,8 +56,61 @@ vorm config          # effective values and their source
 vorm config lint     # catch typos and bad combinations
 ```
 
-Keep `DATABASE_URL` in the environment rather than in `.vorm`; the environment
-always wins, which is what makes the same config work in CI and production.
+Keep `DATABASE_URL` in the environment rather than in the config file; the
+environment always wins, which is what makes the same config work in CI and
+production. Legacy `.vorm` KEY=value still loads when no YAML is present.
+
+### `vorm.yaml` reference
+
+All keys (omit any to keep the default):
+
+```yaml
+version: "1"
+
+package: gen
+out_dir: ./vorm/gen
+query_dir: ./queries
+model_dir: ./models
+schema_dir: ./migrations
+model_package: models
+# model_import: github.com/acme/app/models
+
+driver: pgx          # pgx | pq
+dialect: postgres    # postgres | mysql | mariadb
+migration_path: ./migrations
+model_source: db     # db | blueprint
+schema_name: public
+
+emit_relations: true
+emit_functions: true
+include_views: false
+
+# database_url: postgres://user:pass@localhost:5432/app?sslmode=disable
+
+gen:
+  go:
+    emit_sql_as_comment: false
+```
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `package` | `gen` | generated query package |
+| `out_dir` | `./vorm/<package>` | query codegen output |
+| `query_dir` | `./queries` | stubs |
+| `model_dir` / `model_package` | `./models` / `models` | model codegen |
+| `schema_dir` | `./migrations` | Blueprint parse path |
+| `model_import` | from `go.mod` | import path in gen package |
+| `driver` / `dialect` | `pgx` / `postgres` | client + SQL dialect |
+| `migration_path` | `./migrations` | `vorm migrate` |
+| `model_source` | `db` | `db` or `blueprint` |
+| `schema_name` | `public` | introspection scope |
+| `emit_relations` / `emit_functions` | `true` | model extras |
+| `include_views` | `false` | view models |
+| `gen.go.emit_sql_as_comment` | `false` | SQL comment above gen funcs |
+| `database_url` | — | prefer env `DATABASE_URL` |
+
+See also [Config in API.md](API.md#config-vormyaml) and the comparison of
+[vorm / vm / sqlc](../README.md#when-to-use-vorm-vm-or-sqlc) in the README.
 
 ## Write a migration
 

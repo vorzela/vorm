@@ -65,7 +65,7 @@ func main() {
 			fatal(err)
 		}
 	case "version", "--version":
-		fmt.Println("vorm 0.2.6 (Vorzela v3)")
+		fmt.Println("vorm 0.2.7 (Vorzela v3)")
 	case "help", "--help", "-h":
 		usage()
 	default:
@@ -83,8 +83,8 @@ func cmdInit(args []string) error {
 		}
 	}
 	path := config.DefaultFile
-	if _, err := os.Stat(path); err == nil && !force {
-		return fmt.Errorf("%s already exists (use vorm init --force to overwrite)", path)
+	if existing, ok := config.ConfigExists("."); ok && !force {
+		return fmt.Errorf("%s already exists (use vorm init --force to overwrite)", existing)
 	}
 	cfg := config.Default()
 	if url := os.Getenv("DATABASE_URL"); url != "" {
@@ -93,7 +93,7 @@ func cmdInit(args []string) error {
 	if err := cfg.Write(path); err != nil {
 		return err
 	}
-	fmt.Printf("wrote %s (PACKAGE=%s, DIALECT=%s)\n", path, cfg.Package, cfg.Dialect)
+	fmt.Printf("wrote %s (package=%s, dialect=%s)\n", path, cfg.Package, cfg.Dialect)
 	fmt.Println("next: export DATABASE_URL=… && vorm migrate && vorm generate")
 	return nil
 }
@@ -109,7 +109,11 @@ func cmdConfig(args []string) error {
 			src = cfg.Path
 		}
 		fmt.Printf("# effective config from %s\n", src)
-		fmt.Print(config.Format(cfg))
+		if cfg.Path != "" && (strings.HasSuffix(cfg.Path, ".yaml") || strings.HasSuffix(cfg.Path, ".yml")) {
+			fmt.Print(config.FormatYAML(cfg))
+		} else {
+			fmt.Print(config.Format(cfg))
+		}
 		return nil
 	}
 	switch args[0] {
@@ -168,7 +172,7 @@ func cmdConfig(args []string) error {
 		fs, err := config.LintPath(path)
 		if err != nil {
 			if os.IsNotExist(err) {
-				fmt.Println("vorm config: no .vorm (ok — defaults apply); run vorm init to create one")
+				fmt.Println("vorm config: no vorm.yaml (ok — defaults apply); run vorm init to create one")
 				return nil
 			}
 			return err
@@ -179,7 +183,7 @@ func cmdConfig(args []string) error {
 		}
 		return nil
 	default:
-		return fmt.Errorf("usage: vorm config | get KEY | set KEY=value | keys | lint [.vorm]")
+		return fmt.Errorf("usage: vorm config | get KEY | set KEY=value | keys | lint [vorm.yaml]")
 	}
 }
 
@@ -434,7 +438,7 @@ func usage() {
 	fmt.Print(`vorm — migrations, database-introspected models, and generated typed queries
 
 Setup:
-  vorm init                         # write .vorm (dialect detected from DATABASE_URL)
+  vorm init                         # write vorm.yaml (dialect detected from DATABASE_URL)
   vorm config                       # show effective config
   vorm config set PACKAGE=vormgen   # avoid conflicts with another "gen"
   vorm config lint

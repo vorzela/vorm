@@ -8,7 +8,7 @@ external migration tool required.
 go install github.com/vorzela/vorm/cmd/vorm@latest
 
 export DATABASE_URL=postgres://user:pass@localhost:5432/app?sslmode=disable
-vorm init                 # write .vorm (dialect detected from DATABASE_URL)
+vorm init                 # write vorm.yaml (dialect detected from DATABASE_URL)
 vorm make migration posts # timestamped Blueprint Up/Down in migrations/
 vorm make belongs-to-many posts tags
 vorm migrate              # apply migrations in-process
@@ -79,6 +79,32 @@ vorm enums --drop-disabled # also remove commented-out types
 Syncing is re-runnable: enums become a create-or-add-values block rather than a
 `CREATE TYPE` that fails the second time, and a disabled enum is only dropped
 when no column still uses it.
+
+## When to use vorm, vm, or sqlc
+
+Three related tools cover migrations and typed Go queries. Pick by what you want
+to own:
+
+| | **[vorm](https://github.com/vorzela/vorm)** | **[vm](https://github.com/vorzela/vorzela-migrate)** | **[sqlc](https://sqlc.dev/)** |
+|---|----------|----------|----------|
+| Role | Codegen data layer (models + queries + migrations) | Migration CLI only | SQL → typed Go codegen |
+| Query authoring | Fluent Go stubs (`// vorm:query`) lowered to SQL | — (pair with vorm or sqlc) | Hand-written `.sql` |
+| Models | Generated from live DB (or Blueprint) | — | You define / override in config |
+| Relations / soft deletes | Built-in (`With`, morphs, `SoftDeletes`) | — | You write joins and helpers |
+| Migrations | In-process Blueprint / SQL runner | SQL migrations: drift detection, online DDL, locks, checksums | External (often goose / golang-migrate) |
+| Best when | One binary for schema → models → typed queries | Production-grade SQL migrator (zero-downtime, drift) | SQL-first reviews; thinnest query codegen |
+
+**Use vorm** when you want introspected models, Go query stubs, and migrations
+without a second toolchain.
+
+**Use vm** ([vorzela-migrate](https://github.com/vorzela/vorzela-migrate)) when
+migrations are the hard problem — schema drift, online DDL, or a SQL-only
+migration workflow — and you may still generate queries with vorm or sqlc.
+
+**Use sqlc** when queries are SQL-first and you prefer reviewing `.sql` files.
+
+You can combine them: `vm migrate` for schema, then `vorm generate` or
+`sqlc generate` for typed queries (point outputs at different packages).
 
 ## Models come from the database
 
@@ -244,7 +270,11 @@ db, err := query.OpenPostgres(ctx, url, query.WithDriver(query.PostgresPQ))
 db, err := query.OpenMySQL("user:pass@tcp(localhost:3306)/app?parseTime=true")
 ```
 
-## Config (`.vorm`)
+## Config (`vorm.yaml`)
+
+`vorm init` writes `vorm.yaml` (or use `vorm.yml`). Legacy `.vorm` KEY=value
+still loads when no YAML file is present. JSON tags on generated structs default
+to **lowercase snake_case** (column `display_name` → `json:"display_name"`).
 
 ```bash
 vorm config                     # effective values and where they came from
@@ -252,16 +282,62 @@ vorm config set PACKAGE=vormgen # avoid a clash with another "gen" package
 vorm config lint
 ```
 
-| Key | Default | Meaning |
-|-----|---------|---------|
-| `PACKAGE` | `gen` | package name for generated queries |
-| `OUT_DIR` | `./vorm/<PACKAGE>` | where `db.go` and `{source}.sql.go` are written |
-| `DRIVER` | `pgx` | `pgx` or `pq` |
-| `DIALECT` | `postgres` | `postgres`, `mysql`, `mariadb` |
-| `MIGRATION_PATH` | `./migrations` | SQL directory |
-| `MODEL_SOURCE` | `db` | `db` (introspect) or `blueprint` |
-| `MODEL_DIR` / `MODEL_PACKAGE` | `./models` / `models` | generated models |
-| `DATABASE_URL` | — | overridden by the environment variable |
+Full key list (YAML names; uppercase equivalents work in `.vorm`):
+
+| YAML key | Default | Meaning |
+|----------|---------|---------|
+| `version` | `"1"` | config schema version (informational) |
+| `package` | `gen` | Go package name for generated queries |
+| `out_dir` | `./vorm/<package>` | where `db.go` and `{source}.sql.go` are written |
+| `query_dir` | `./queries` | `// vorm:query` stubs |
+| `model_dir` | `./models` | generated model package directory |
+| `schema_dir` | `./migrations` | Blueprint / schema sources for `--from-blueprint` |
+| `model_package` | `models` | Go package name for models |
+| `model_import` | from `go.mod` | import path used by generated queries |
+| `driver` | `pgx` | `pgx` or `pq` |
+| `dialect` | `postgres` | `postgres`, `mysql`, `mariadb` |
+| `migration_path` | `./migrations` | migration files for `vorm migrate` |
+| `model_source` | `db` | `db` (introspect) or `blueprint` |
+| `schema_name` | `public` | Postgres schema / MySQL database name |
+| `emit_relations` | `true` | relation fields + loaders on models |
+| `emit_functions` | `true` | stored-routine wrappers |
+| `include_views` | `false` | generate models for views |
+| `emit_sql_as_comment` | `false` | top-level alias for SQL comments on gen funcs |
+| `database_url` | — | prefer `DATABASE_URL` in the environment |
+| `gen.go.emit_sql_as_comment` | `false` | sqlc-shaped: write SQL as a comment above each gen function |
+
+```yaml
+# vorm.yaml — all keys (omit any to keep defaults)
+version: "1"
+
+package: gen
+out_dir: ./vorm/gen
+query_dir: ./queries
+model_dir: ./models
+schema_dir: ./migrations
+model_package: models
+# model_import: github.com/acme/app/models   # empty = <module>/models from go.mod
+
+driver: pgx          # pgx | pq
+dialect: postgres    # postgres | mysql | mariadb
+migration_path: ./migrations
+model_source: db     # db | blueprint
+schema_name: public
+
+emit_relations: true
+emit_functions: true
+include_views: false
+
+# Prefer DATABASE_URL in the environment over database_url here.
+# database_url: postgres://user:pass@localhost:5432/app?sslmode=disable
+
+gen:
+  go:
+    emit_sql_as_comment: false
+```
+
+See [`docs/API.md`](docs/API.md#config-vormyaml) for the same reference with
+legacy `.vorm` key names.
 
 ## Further reading
 

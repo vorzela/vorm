@@ -224,10 +224,7 @@ func existsFromRelation(parentTable, parentPK string, rel Relation) (existsArg, 
 		ea.RelatedTable = rel.PivotTable
 		ea.RelatedCol = rel.PivotLocalKey
 		ea.JoinTable = rel.Table
-		farPK := rel.PivotForeignKey
-		if farPK == "" {
-			farPK = "id"
-		}
+		farPK := throughFarKey(rel)
 		ea.JoinOnLeft = rel.PivotTable + "." + farPK
 		ea.JoinOnRight = rel.Table + "." + rel.ForeignKey
 	case RelationBelongsToMany, RelationMorphToMany:

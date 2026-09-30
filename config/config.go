@@ -1,4 +1,5 @@
-// Package config loads `.vorm` project settings (KEY=value).
+// Package config loads project settings from vorm.yaml / vorm.yml (preferred)
+// or the legacy `.vorm` KEY=value file.
 package config
 
 import (
@@ -11,9 +12,6 @@ import (
 )
 
 const (
-	// DefaultFile is the project config filename.
-	DefaultFile = ".vorm"
-
 	DefaultPackage       = "gen"
 	DefaultOutDir        = "./vorm/gen"
 	DefaultQueryDir      = "./queries"
@@ -52,8 +50,8 @@ type Config struct {
 	Dialect string // postgres | mysql | mariadb
 
 	// DatabaseURL is the connection string used by the migration runner
-	// and by database introspection. Leave it out of .vorm and set DATABASE_URL
-	// in the environment for anything that is not a local dev database.
+	// and by database introspection. Prefer DATABASE_URL in the environment
+	// over putting credentials in the config file.
 	DatabaseURL string
 
 	// MigrationPath holds numbered Blueprint *.go files (and legacy *.sql).
@@ -120,54 +118,63 @@ func (c *Config) IntrospectModels() bool {
 	return true
 }
 
-// Load reads `.vorm` from dir (or cwd). Missing file → defaults (no error).
+// Load reads vorm.yaml / vorm.yml from dir (or cwd), falling back to legacy
+// `.vorm` KEY=value when no YAML file is present. Missing file → defaults.
 func Load(dir string) (*Config, error) {
 	if dir == "" {
 		dir = "."
 	}
-	path := filepath.Join(dir, DefaultFile)
 	cfg := Default()
-	f, err := os.Open(path)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return nil, err
-		}
-	} else {
-		defer f.Close()
-		cfg.Path = path
 
-		sc := bufio.NewScanner(f)
-		lineNo := 0
-		for sc.Scan() {
-			lineNo++
-			line := strings.TrimSpace(sc.Text())
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-			key, val, ok := strings.Cut(line, "=")
-			if !ok {
-				return nil, fmt.Errorf("%s:%d: want KEY=value", path, lineNo)
-			}
-			key = strings.TrimSpace(strings.ToUpper(key))
-			val = strings.TrimSpace(val)
-			val = strings.Trim(val, `"'`)
-			if err := cfg.set(key, val); err != nil {
-				return nil, fmt.Errorf("%s:%d: %w", path, lineNo, err)
-			}
-		}
-		if err := sc.Err(); err != nil {
-			return nil, err
-		}
-	}
-	cfg.applyDerived()
-	if err := applyYAML(cfg, dir); err != nil {
+	path, ok, err := loadYAMLFile(cfg, dir)
+	if err != nil {
 		return nil, err
 	}
+	if ok {
+		cfg.Path = path
+	} else if err := loadLegacyFile(cfg, dir); err != nil {
+		return nil, err
+	}
+
 	cfg.applyDerived()
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+func loadLegacyFile(cfg *Config, dir string) error {
+	path := filepath.Join(dir, LegacyFile)
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	defer f.Close()
+	cfg.Path = path
+
+	sc := bufio.NewScanner(f)
+	lineNo := 0
+	for sc.Scan() {
+		lineNo++
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, val, ok := strings.Cut(line, "=")
+		if !ok {
+			return fmt.Errorf("%s:%d: want KEY=value", path, lineNo)
+		}
+		key = strings.TrimSpace(strings.ToUpper(key))
+		val = strings.TrimSpace(val)
+		val = strings.Trim(val, `"'`)
+		if err := cfg.set(key, val); err != nil {
+			return fmt.Errorf("%s:%d: %w", path, lineNo, err)
+		}
+	}
+	return sc.Err()
 }
 
 // LoadOrDefault is Load that never fails on missing file.
@@ -340,7 +347,8 @@ func validGoPackage(name string) error {
 	return nil
 }
 
-// Write writes config to path (default ./.vorm).
+// Write writes config to path (default ./vorm.yaml). YAML paths get FormatYAML;
+// legacy `.vorm` keeps KEY=value.
 func (c *Config) Write(path string) error {
 	if path == "" {
 		path = DefaultFile
@@ -350,7 +358,15 @@ func (c *Config) Write(path string) error {
 		return err
 	}
 	body := Format(c)
+	if isYAMLPath(path) {
+		body = FormatYAML(c)
+	}
 	return os.WriteFile(path, []byte(body), 0o644)
+}
+
+func isYAMLPath(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	return ext == ".yaml" || ext == ".yml"
 }
 
 // Format renders KEY=value with comments.
@@ -385,8 +401,9 @@ func Format(c *Config) string {
 	fmt.Fprintf(&b, "SCHEMA_NAME=%s\n", c.SchemaName)
 	fmt.Fprintf(&b, "EMIT_RELATIONS=%s\n", boolString(c.EmitRelations))
 	fmt.Fprintf(&b, "EMIT_FUNCTIONS=%s\n", boolString(c.EmitFunctions))
+	b.WriteString("# Prefer vorm.yaml (sqlc-style). This KEY=value form is legacy.\n")
 	b.WriteString("# sqlc-style: write generated SQL as a comment above each gen function\n")
-	b.WriteString("# (also: vorm.yaml → gen.go.emit_sql_as_comment)\n")
+	b.WriteString("# (vorm.yaml → gen.go.emit_sql_as_comment)\n")
 	fmt.Fprintf(&b, "EMIT_SQL_AS_COMMENT=%s\n", boolString(c.EmitSQLAsComment))
 	fmt.Fprintf(&b, "INCLUDE_VIEWS=%s\n\n", boolString(c.IncludeViews))
 

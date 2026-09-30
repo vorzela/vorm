@@ -224,7 +224,7 @@ func renderModel(opts SchemaOptions, mapper *TypeMapper, t introspect.Table, tab
 		imports.add(gt.Import)
 		field := fields[c.Name]
 
-		jsonTag := c.Name
+		jsonTag := JSONTag(c.Name)
 		if c.Nullable {
 			jsonTag += ",omitempty"
 		}
@@ -252,11 +252,13 @@ func renderModel(opts SchemaOptions, mapper *TypeMapper, t introspect.Table, tab
 			default:
 				goType = "*" + ModelName(r.RelatedTable)
 			}
-			fmt.Fprintf(&fieldDecls, "\t%s %s `json:\"%s,omitempty\" db:\"-\"`\n", r.Field, goType, r.Name)
+			fmt.Fprintf(&fieldDecls, "\t%s %s `json:\"%s,omitempty\" db:\"-\"`\n", r.Field, goType, JSONTag(r.Name))
 			switch r.Kind {
 			case query.RelationHasMany, query.RelationBelongsToMany, query.RelationMorphMany, query.RelationHasManyThrough, query.RelationMorphToMany:
-				fmt.Fprintf(&fieldDecls, "\t%s int64 `json:%q db:%q`\n", r.Field+"Count", r.Name+"_count", r.Name+"_count")
-				fmt.Fprintf(&fieldDecls, "\t%s bool `json:%q db:%q`\n", r.Field+"Exists", r.Name+"_exists", r.Name+"_exists")
+				countTag := JSONTag(r.Name + "_count")
+				existsTag := JSONTag(r.Name + "_exists")
+				fmt.Fprintf(&fieldDecls, "\t%s int64 `json:%q db:%q`\n", r.Field+"Count", countTag, r.Name+"_count")
+				fmt.Fprintf(&fieldDecls, "\t%s bool `json:%q db:%q`\n", r.Field+"Exists", existsTag, r.Name+"_exists")
 			}
 		}
 	}

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7] — 2026-09-30
+
+### Changed
+
+- Project config prefers `vorm.yaml` / `vorm.yml` (sqlc-style); `vorm init`
+  writes YAML. Legacy `.vorm` KEY=value still loads when no YAML is present.
+- Generated model/row `json` tags default to lowercase snake_case.
+- README: when to use vorm vs [vm](https://github.com/vorzela/vorzela-migrate)
+  vs sqlc; docs list every `vorm.yaml` key.
+
+### Fixed
+
+- Wire `throughFarKey` into has-many-through EXISTS joins.
+
 ## [0.2.6] — 2026-09-30
 
 ### Fixed
@@ -101,10 +115,11 @@ gen:
 - First standalone release: in-process migrations, database-introspected models, and `// vorm:query` stubs lowered to parameterized sqlc-style Go.
 
 ```
-go install github.com/vorzela/vorm/cmd/vorm@v0.2.6
+go install github.com/vorzela/vorm/cmd/vorm@v0.2.7
 ```
 
-[Unreleased]: https://github.com/vorzela/vorm/compare/v0.2.6...HEAD
+[Unreleased]: https://github.com/vorzela/vorm/compare/v0.2.7...HEAD
+[0.2.7]: https://github.com/vorzela/vorm/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/vorzela/vorm/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/vorzela/vorm/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/vorzela/vorm/compare/v0.2.3...v0.2.4

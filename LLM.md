@@ -72,11 +72,17 @@ query.Classify(err)   // query.Kind
 
 ## Config
 
-`.vorm`, `KEY=value`. `DATABASE_URL` from the environment always wins.
+Prefer `vorm.yaml` / `vorm.yml`. Legacy `.vorm` KEY=value still loads when no
+YAML is present. `DATABASE_URL` from the environment always wins. Generated
+JSON tags are lowercase snake_case by default.
 
-Keys: `PACKAGE`, `OUT_DIR`, `DRIVER`, `DIALECT`, `MIGRATION_PATH`,
-`MODEL_SOURCE`, `MODEL_DIR`, `MODEL_PACKAGE`, `MODEL_IMPORT`, `QUERY_DIR`,
-`SCHEMA_DIR`, `SCHEMA_NAME`, `EMIT_RELATIONS`, `EMIT_FUNCTIONS`.
+YAML keys: `version`, `package`, `out_dir`, `query_dir`, `model_dir`,
+`schema_dir`, `model_package`, `model_import`, `driver`, `dialect`,
+`migration_path`, `model_source`, `schema_name`, `emit_relations`,
+`emit_functions`, `include_views`, `emit_sql_as_comment`, `database_url`,
+`gen.go.emit_sql_as_comment`.
+
+See README (vorm / vm / sqlc) and `docs/API.md` for the full table.
 
 ## PostgreSQL prerequisites
 

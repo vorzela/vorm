@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Finding is one lint issue in a .vorm file.
@@ -111,12 +113,38 @@ func levenshtein(a, b string) int {
 	return dp[n]
 }
 
-// LintPath lints path or ./.vorm when empty.
+// LintPath lints path, or the first existing config file when empty
+// (vorm.yaml / vorm.yml / .vorm). YAML files are validated by Load rules.
 func LintPath(path string) ([]Finding, error) {
 	if path == "" {
-		path = filepath.Join(".", DefaultFile)
+		if p, ok := ConfigExists("."); ok {
+			path = p
+		} else {
+			path = filepath.Join(".", DefaultFile)
+		}
+	}
+	if isYAMLPath(path) {
+		return LintYAML(path)
 	}
 	return LintFile(path)
+}
+
+// LintYAML validates a vorm.yaml / vorm.yml by unmarshaling into Config.
+func LintYAML(path string) ([]Finding, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	cfg := Default()
+	var y yamlDoc
+	if err := yaml.Unmarshal(body, &y); err != nil {
+		return []Finding{{Line: 1, Level: "error", Message: err.Error()}}, nil
+	}
+	applyYAMLDoc(cfg, y)
+	if err := cfg.Validate(); err != nil {
+		return []Finding{{Line: 1, Level: "error", Message: err.Error()}}, nil
+	}
+	return nil, nil
 }
 
 // FormatFindings prints lint results.

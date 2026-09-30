@@ -34,19 +34,19 @@ Never edit `models/` or `vorm/gen/`. After schema changes: `vorm migrate && vorm
 12. [Errors](#errors)
 13. [Logging](#logging)
 14. [Operators and helpers](#operators-and-helpers)
-15. [Config (`.vorm`)](#config-vorm)
+15. [Config (`vorm.yaml`)](#config-vormyaml)
 
 ---
 
 ## CLI
 
 ```bash
-vorm init [--force]                 # write .vorm
+vorm init [--force]                 # write vorm.yaml
 vorm config                         # effective values and their source
 vorm config get KEY
 vorm config set KEY=value
 vorm config keys
-vorm config lint [.vorm]
+vorm config lint [vorm.yaml]
 
 vorm make migration <name>          # create | pivot (post_tag) | alter (add_*_to_*)
 vorm make belongs-to <child> <parent> [column]
@@ -771,45 +771,82 @@ models usually declare those fields explicitly from introspection.
 
 ---
 
-## Config (`.vorm`)
+## Config (`vorm.yaml`)
 
-`KEY=value`. `DATABASE_URL` from the environment always wins.
+Prefer `vorm.yaml` / `vorm.yml`. Legacy `.vorm` KEY=value still loads when no
+YAML file is present. `DATABASE_URL` from the environment always overrides
+`database_url`. Generated model/row JSON tags default to lowercase snake_case.
 
-| Key | Default | Meaning |
-|-----|---------|---------|
-| `PACKAGE` | `gen` | generated query package name |
-| `OUT_DIR` | `./vorm/<PACKAGE>` | `db.go` + `{source}.sql.go` |
-| `QUERY_DIR` | `./queries` | `// vorm:query` stubs |
-| `MODEL_DIR` | `./models` | generated models |
-| `MODEL_PACKAGE` | `models` | Go package name |
-| `MODEL_IMPORT` | from `go.mod` | import path in generated queries |
-| `DRIVER` | `pgx` | `pgx` or `pq` |
-| `DIALECT` | `postgres` | `postgres`, `mysql`, `mariadb` |
-| `MIGRATION_PATH` / `SCHEMA_DIR` | `./migrations` | Blueprint files |
-| `MODEL_SOURCE` | `db` | `db` or `blueprint` |
-| `SCHEMA_NAME` | `public` | PG schema / MySQL database |
-| `EMIT_RELATIONS` | `true` | loaders + relation fields |
-| `EMIT_FUNCTIONS` | `true` | stored-routine wrappers |
-| `EMIT_SQL_AS_COMMENT` | `false` | SQL block comment above each `gen` function (sqlc `emit_sql_as_comment`) |
-| `INCLUDE_VIEWS` | `false` | generate models for views |
-| `DATABASE_URL` | — | prefer the environment |
+### Available YAML keys
 
-Optional `vorm.yaml` / `vorm.yml` overlays the same flag (sqlc-shaped keys win):
+| YAML key | Legacy `.vorm` | Default | Meaning |
+|----------|----------------|---------|---------|
+| `version` | — | `"1"` | config schema version (informational) |
+| `package` | `PACKAGE` | `gen` | generated query package name |
+| `out_dir` | `OUT_DIR` | `./vorm/<package>` | `db.go` + `{source}.sql.go` |
+| `query_dir` | `QUERY_DIR` | `./queries` | `// vorm:query` stubs |
+| `model_dir` | `MODEL_DIR` | `./models` | generated models directory |
+| `schema_dir` | `SCHEMA_DIR` | `./migrations` | Blueprint sources (`--from-blueprint`) |
+| `model_package` | `MODEL_PACKAGE` | `models` | Go package name for models |
+| `model_import` | `MODEL_IMPORT` | from `go.mod` | import path in generated queries |
+| `driver` | `DRIVER` | `pgx` | `pgx` or `pq` |
+| `dialect` | `DIALECT` | `postgres` | `postgres`, `mysql`, `mariadb` |
+| `migration_path` | `MIGRATION_PATH` | `./migrations` | files for `vorm migrate` |
+| `model_source` | `MODEL_SOURCE` | `db` | `db` or `blueprint` |
+| `schema_name` | `SCHEMA_NAME` | `public` | PG schema / MySQL database |
+| `emit_relations` | `EMIT_RELATIONS` | `true` | loaders + relation fields |
+| `emit_functions` | `EMIT_FUNCTIONS` | `true` | stored-routine wrappers |
+| `include_views` | `INCLUDE_VIEWS` | `false` | generate models for views |
+| `emit_sql_as_comment` | `EMIT_SQL_AS_COMMENT` | `false` | top-level SQL comment flag |
+| `database_url` | `DATABASE_URL` | — | prefer the environment |
+| `gen.go.emit_sql_as_comment` | `EMIT_SQL_AS_COMMENT` | `false` | sqlc-shaped nest (wins if both set) |
+
+Aliases accepted in `.vorm`: `GEN_PACKAGE`, `PACKAGE_NAME`, `GEN_DIR`,
+`QUERIES_DIR`, `MODELS_DIR`, `DSN`, `MIGRATIONS_DIR`, `SOURCE`. `RUNNER` is
+ignored (migrations always run in-process).
+
+### Full example
 
 ```yaml
+# vorm.yaml / vorm.yml
 version: "1"
+
+package: gen
+out_dir: ./vorm/gen
+query_dir: ./queries
+model_dir: ./models
+schema_dir: ./migrations
+model_package: models
+# model_import: github.com/acme/app/models
+
+driver: pgx
+dialect: postgres
+migration_path: ./migrations
+model_source: db
+schema_name: public
+
+emit_relations: true
+emit_functions: true
+include_views: false
+# emit_sql_as_comment: false   # same as gen.go.emit_sql_as_comment
+
+# Prefer DATABASE_URL in the environment.
+# database_url: postgres://user:pass@localhost:5432/app?sslmode=disable
+
 gen:
   go:
-    emit_sql_as_comment: true
+    emit_sql_as_comment: false
 ```
 
-When enabled, generated functions look like:
+When `emit_sql_as_comment` is enabled, generated functions look like:
 
 ```go
 // GetByEmail
 //
 //	SELECT "id", "email" FROM "users" WHERE "email" = $1 AND "deleted_at" IS NULL LIMIT 1
 func GetByEmail(ctx context.Context, db query.DB, arg GetByEmailParams) (*GetByEmailRow, error) {
+	// …
+}
 ```
 
 ```bash

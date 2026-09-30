@@ -166,3 +166,16 @@ func EntityName(table string) string {
 func FileName(table string) string {
 	return strings.ToLower(Singular(strings.ReplaceAll(table, ".", "_"))) + "_gen.go"
 }
+
+// JSONTag returns the default json struct-tag name: lowercase snake_case
+// from a database column or relation identifier (DisplayName → display_name).
+func JSONTag(name string) string {
+	parts := splitIdent(strings.TrimSpace(name))
+	if len(parts) == 0 {
+		return strings.ToLower(strings.TrimSpace(name))
+	}
+	for i, p := range parts {
+		parts[i] = strings.ToLower(p)
+	}
+	return strings.Join(parts, "_")
+}
