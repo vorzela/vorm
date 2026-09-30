@@ -24,6 +24,7 @@ type ModelSpec struct {
 	Fields      []FieldSpec // db column order for Scan
 	SoftDeletes bool
 	PrimaryKey  string
+	Indexes     []query.IndexInfo
 	Relations   []RelSpec
 }
 
@@ -94,6 +95,7 @@ type StubFunc struct {
 
 	CreateVals    []KVSpec
 	UpdateVals    []KVSpec
+	OrCreateAttrs []KVSpec // FirstOrCreate / UpdateOrCreate lookup map
 	SoftIDExpr    string // SoftDelete/ForceDelete id expr
 	AmountExpr    string // Increment/Decrement amount
 	RelSubselects []RelSubselect
@@ -106,8 +108,9 @@ type StubFunc struct {
 	CursorCol   string
 	CursorDesc  bool
 
-	Pending    bool // body too complex to lower
-	PendingWhy string
+	Pending      bool // body too complex to lower
+	PendingWhy   string
+	GenerateErr  string // hard generate failure (e.g. FirstOrCreate without unique index)
 }
 
 type ParamSpec struct {
@@ -176,10 +179,15 @@ type KVSpec struct {
 type pkgConsts struct {
 	strings map[string]string
 	slices  map[string][]string
+	indexes map[string][]query.IndexInfo
 }
 
 func newPkgConsts() *pkgConsts {
-	return &pkgConsts{strings: map[string]string{}, slices: map[string][]string{}}
+	return &pkgConsts{
+		strings: map[string]string{},
+		slices:  map[string][]string{},
+		indexes: map[string][]query.IndexInfo{},
+	}
 }
 
 func (c *pkgConsts) collect(f *ast.File) {
@@ -200,6 +208,10 @@ func (c *pkgConsts) collect(f *ast.File) {
 			}
 			if vals := litStringSlice(vs.Values[0]); len(vals) > 0 {
 				c.slices[name] = vals
+				continue
+			}
+			if idxs := parseIndexInfoSlice(vs.Values[0]); len(idxs) > 0 {
+				c.indexes[name] = idxs
 			}
 		}
 	}
@@ -225,6 +237,57 @@ func (c *pkgConsts) resolveStrings(e ast.Expr) []string {
 		return c.slices[id.Name]
 	}
 	return nil
+}
+
+func (c *pkgConsts) resolveIndexes(e ast.Expr) []query.IndexInfo {
+	if idxs := parseIndexInfoSlice(e); len(idxs) > 0 {
+		return idxs
+	}
+	if id, ok := e.(*ast.Ident); ok && c != nil {
+		return c.indexes[id.Name]
+	}
+	return nil
+}
+
+func parseIndexInfoSlice(expr ast.Expr) []query.IndexInfo {
+	cl, ok := expr.(*ast.CompositeLit)
+	if !ok {
+		return nil
+	}
+	var out []query.IndexInfo
+	for _, elt := range cl.Elts {
+		inner, ok := elt.(*ast.CompositeLit)
+		if !ok {
+			continue
+		}
+		var idx query.IndexInfo
+		for _, f := range inner.Elts {
+			kv, ok := f.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			switch exprString(kv.Key) {
+			case "Name":
+				idx.Name, _ = litString(kv.Value)
+			case "Columns":
+				idx.Columns = litStringSlice(kv.Value)
+			case "Unique":
+				idx.Unique = exprString(kv.Value) == "true"
+			case "Primary":
+				idx.Primary = exprString(kv.Value) == "true"
+			case "Method":
+				idx.Method, _ = litString(kv.Value)
+			case "Partial":
+				idx.Partial = exprString(kv.Value) == "true"
+			case "Predicate":
+				idx.Predicate, _ = litString(kv.Value)
+			}
+		}
+		if len(idx.Columns) > 0 {
+			out = append(out, idx)
+		}
+	}
+	return out
 }
 
 func parseModelsDir(dir string) (map[string]ModelSpec, error) {
@@ -306,6 +369,7 @@ func parseModelsDir(dir string) (map[string]ModelSpec, error) {
 					Columns:     meta.Columns,
 					SoftDeletes: meta.SoftDeletes,
 					PrimaryKey:  meta.PrimaryKey,
+					Indexes:     meta.Indexes,
 				}
 				if ms.PrimaryKey == "" {
 					ms.PrimaryKey = "id"
@@ -502,6 +566,8 @@ func parseMetaLit(expr ast.Expr, consts *pkgConsts) (query.Meta, bool) {
 			m.SoftDeletes = exprString(kv.Value) == "true"
 		case "Columns":
 			m.Columns = consts.resolveStrings(kv.Value)
+		case "Indexes":
+			m.Indexes = consts.resolveIndexes(kv.Value)
 		}
 	}
 	return m, m.Table != "" && len(m.Columns) > 0
@@ -820,10 +886,57 @@ func lowerCallChain(call *ast.CallExpr, st *StubFunc, models map[string]ModelSpe
 			}
 		}
 		return lowerBuilderChain(sel.X, st, models)
+	case "FirstOrCreate", "UpdateOrCreate":
+		return lowerOrCreate(action, call, sel.X, st, models)
 	default:
 		st.PendingWhy = "terminal call " + action + " is runtime-only"
 		return false
 	}
+}
+
+// lowerOrCreate parses FirstOrCreate/UpdateOrCreate attrs and requires a unique
+// index on those columns (vorm generate fails hard otherwise). Emission stays
+// on the runtime builder.
+func lowerOrCreate(action string, call *ast.CallExpr, recv ast.Expr, st *StubFunc, models map[string]ModelSpec) bool {
+	if len(call.Args) < 3 {
+		st.GenerateErr = action + " needs a literal attrs map[string]any"
+		return false
+	}
+	attrs := parseMapLit(call.Args[2])
+	if len(attrs) == 0 {
+		st.GenerateErr = action + " attrs must be a map literal with string column keys (so generate can verify a unique index)"
+		return false
+	}
+	st.Action = action
+	st.OrCreateAttrs = attrs
+	ok := lowerBuilderChain(recv, st, models) || lowerEntityStart(recv, st, models)
+	if !ok && st.PendingWhy == "" && st.GenerateErr == "" {
+		st.PendingWhy = "unsupported " + action + " receiver"
+		return false
+	}
+	if st.GenerateErr != "" {
+		return false
+	}
+	ms := resolveModel(*st, models)
+	if ms.Table == "" {
+		st.GenerateErr = action + " cannot resolve model/entity — run vorm generate models"
+		return false
+	}
+	cols := make([]string, len(attrs))
+	for i, kv := range attrs {
+		cols[i] = kv.Col
+	}
+	meta := query.Meta{Table: ms.Table, PrimaryKey: ms.PrimaryKey, Indexes: ms.Indexes}
+	if meta.PrimaryKey == "" {
+		meta.PrimaryKey = "id"
+	}
+	if err := meta.RequireUniqueLookup(cols); err != nil {
+		st.GenerateErr = err.Error()
+		return false
+	}
+	// Still runtime-only for SQL emission; unique requirement is the gate.
+	st.PendingWhy = "terminal call " + action + " is runtime-only"
+	return false
 }
 
 // parsePageRequest pulls pagination fields out of a query.PageRequest literal.

@@ -113,7 +113,13 @@ var Users = query.Model[User](query.Meta{
 		"created_at", "updated_at", "deleted_at",
 	},
 	SoftDeletes: true,
+	Indexes:     UserIndexes,
 })
+
+var UserIndexes = []query.IndexInfo{
+	{Name: "users_pkey", Columns: []string{"id"}, Unique: true, Primary: true, Method: "btree"},
+	{Name: "users_email_key", Columns: []string{"email"}, Unique: true, Method: "btree"},
+}
 `
 
 // lower runs the generator over a single stub body and returns the source of
@@ -173,6 +179,85 @@ func wants(t *testing.T, src string, want ...string) {
 		if !strings.Contains(src, w) {
 			t.Errorf("missing %q in:\n%s", w, src)
 		}
+	}
+}
+
+func TestGenerateFirstOrCreateRequiresUniqueIndex(t *testing.T) {
+	root := t.TempDir()
+	qdir := filepath.Join(root, "queries")
+	mdir := filepath.Join(root, "models")
+	outdir := filepath.Join(root, "gen")
+	for _, d := range []string{qdir, mdir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Model without a unique index on name.
+	model := `package models
+import "github.com/vorzela/vorm/query"
+type User struct { ID int64 ` + "`db:\"id\"`" + `; Name string ` + "`db:\"name\"`" + ` }
+var Users = query.Model[User](query.Meta{
+	Table: "users", Columns: []string{"id", "name"}, PrimaryKey: "id",
+	Indexes: []query.IndexInfo{{Name: "users_pkey", Columns: []string{"id"}, Unique: true, Primary: true}},
+})
+`
+	if err := os.WriteFile(filepath.Join(mdir, "user.go"), []byte(model), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stub := `package queries
+import (
+	"context"
+	"github.com/vorzela/vorm/query"
+)
+// vorm:query name=ByName
+func ByName(ctx context.Context, db query.DB, name string) (*User, error) {
+	return Users.FirstOrCreate(ctx, db, map[string]any{"name": name})
+}
+`
+	if err := os.WriteFile(filepath.Join(qdir, "q.go"), []byte(stub), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Run(&Options{QueryDir: qdir, OutDir: outdir, ModelDir: mdir, Package: "gen", Dialect: "postgres"})
+	if err == nil {
+		t.Fatal("expected generate error for FirstOrCreate without unique index")
+	}
+	if !strings.Contains(err.Error(), "unique index") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestGenerateFirstOrCreateWithUniqueStaysPending(t *testing.T) {
+	root := t.TempDir()
+	qdir := filepath.Join(root, "queries")
+	mdir := filepath.Join(root, "models")
+	outdir := filepath.Join(root, "gen")
+	for _, d := range []string{qdir, mdir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(mdir, "user.go"), []byte(userModel), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stub := `package queries
+import (
+	"context"
+	"github.com/vorzela/vorm/query"
+)
+// vorm:query name=ByEmail
+func ByEmail(ctx context.Context, db query.DB, email string) (*User, error) {
+	return Users.FirstOrCreate(ctx, db, map[string]any{"email": email})
+}
+`
+	if err := os.WriteFile(filepath.Join(qdir, "q.go"), []byte(stub), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Run(&Options{QueryDir: qdir, OutDir: outdir, ModelDir: mdir, Package: "gen", Dialect: "postgres"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Pending) != 1 || !strings.Contains(res.Pending[0].Reason, "runtime-only") {
+		t.Fatalf("pending=%v", res.Pending)
 	}
 }
 

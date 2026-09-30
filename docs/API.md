@@ -317,8 +317,8 @@ columns (`Meta.Generated`) are omitted from inserts.
 | `Increment(ctx, db, col, amount...)` | `(int64, error)` | Default amount `1` |
 | `Decrement(ctx, db, col, amount...)` | `(int64, error)` | |
 | `Upsert(ctx, db, rows, uniqueCols, updateCols)` | `(int64, error)` | `ON CONFLICT` / `ON DUPLICATE KEY` |
-| `FirstOrCreate(ctx, db, attrs, values...)` | `(*T, error)` | Runtime-only: select then insert; re-selects on unique conflict |
-| `UpdateOrCreate(ctx, db, attrs, values)` | `(*T, error)` | Runtime-only: select then update or insert; re-selects on unique conflict |
+| `FirstOrCreate(ctx, db, attrs, values...)` | `(*T, error)` | Runtime-only; requires unique index on attrs (generate errors otherwise); re-selects on conflict |
+| `UpdateOrCreate(ctx, db, attrs, values)` | `(*T, error)` | Runtime-only; same unique-index requirement; re-selects then updates on conflict |
 
 Entity shortcuts:
 

@@ -448,9 +448,10 @@ row, err := models.Users.FirstOrCreate(ctx, db, map[string]any{"email": e}, map[
 ```
 
 `FirstOrCreate` / `UpdateOrCreate` / `Upsert` stay on the runtime builder (not
-lowered into `vorm/gen`). Generated stubs should use `Create` / `Update` (or
-hand-written `ON CONFLICT` SQL). The builder recovers from a concurrent unique
-violation by re-selecting when a unique index is present.
+lowered into `vorm/gen`). `FirstOrCreate` / `UpdateOrCreate` require a unique
+index on the attrs columns — `vorm generate` fails if a stub uses them without
+one, and the builder rejects the same at runtime. Prefer `Create` / `Update` or
+hand-written `ON CONFLICT` SQL in generated stubs.
 
 `WhereHas` / `WithCount` are correlated subqueries, not N+1:
 

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5] — 2026-09-30
+
+### Changed
+
+- `FirstOrCreate` / `UpdateOrCreate` require a unique index on the attrs columns.
+  `vorm generate` fails when a stub uses them without one (attrs must be a map
+  literal so columns can be checked against `Meta.Indexes`). The runtime builder
+  enforces the same gate.
+
 ## [0.2.4] — 2026-09-30
 
 ### Fixed
@@ -86,10 +95,11 @@ gen:
 - First standalone release: in-process migrations, database-introspected models, and `// vorm:query` stubs lowered to parameterized sqlc-style Go.
 
 ```
-go install github.com/vorzela/vorm/cmd/vorm@v0.2.4
+go install github.com/vorzela/vorm/cmd/vorm@v0.2.5
 ```
 
-[Unreleased]: https://github.com/vorzela/vorm/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/vorzela/vorm/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/vorzela/vorm/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/vorzela/vorm/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/vorzela/vorm/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/vorzela/vorm/compare/v0.2.1...v0.2.2

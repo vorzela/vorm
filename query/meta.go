@@ -45,6 +45,49 @@ func (m Meta) Indexed(col string) bool {
 	return false
 }
 
+// UniqueOn reports whether cols are covered by a unique/primary constraint
+// (exact column set, order-independent). Partial indexes do not qualify.
+// A lone PrimaryKey also counts when Indexes omit an explicit PK entry.
+func (m Meta) UniqueOn(cols ...string) bool {
+	if len(cols) == 0 {
+		return false
+	}
+	if len(cols) == 1 && m.PrimaryKey != "" && strings.EqualFold(bareColumn(cols[0]), m.PrimaryKey) {
+		return true
+	}
+	want := make(map[string]struct{}, len(cols))
+	for _, c := range cols {
+		want[strings.ToLower(bareColumn(c))] = struct{}{}
+	}
+	same := func(have []string) bool {
+		if len(have) != len(want) {
+			return false
+		}
+		for _, c := range have {
+			if _, ok := want[strings.ToLower(c)]; !ok {
+				return false
+			}
+		}
+		return true
+	}
+	for _, idx := range m.Indexes {
+		if !idx.Unique || idx.Partial || !same(idx.Columns) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// RequireUniqueLookup errors unless cols match a unique index (or the primary key).
+// FirstOrCreate / UpdateOrCreate require this so concurrent inserts cannot duplicate.
+func (m Meta) RequireUniqueLookup(cols []string) error {
+	if m.UniqueOn(cols...) {
+		return nil
+	}
+	return fmt.Errorf("FirstOrCreate/UpdateOrCreate on %q requires a unique index exactly on %v", m.Table, cols)
+}
+
 // IsGenerated reports whether the database computes col (never written by vorm).
 func (m Meta) IsGenerated(col string) bool {
 	bare := bareColumn(col)

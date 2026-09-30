@@ -1,6 +1,7 @@
 package generate
 
 import (
+	"fmt"
 	"go/format"
 	"os"
 	"path/filepath"
@@ -87,6 +88,9 @@ func Run(opts *Options) (*Result, error) {
 
 	stubs, err := findAnnotatedStubs(opts.QueryDir, models)
 	if err != nil {
+		return nil, err
+	}
+	if err := rejectOrCreateWithoutUnique(stubs); err != nil {
 		return nil, err
 	}
 
@@ -200,6 +204,20 @@ func pruneGoFiles(dir string, keep map[string]bool) error {
 		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func rejectOrCreateWithoutUnique(stubs []StubFunc) error {
+	for _, st := range stubs {
+		if st.GenerateErr == "" {
+			continue
+		}
+		file := st.File
+		if file != "" {
+			file = filepath.Base(file)
+		}
+		return fmt.Errorf("%s (%s): %s", st.Name, file, st.GenerateErr)
 	}
 	return nil
 }

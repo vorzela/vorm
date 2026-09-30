@@ -39,7 +39,9 @@ locks, and the terminals `Get`, `First`, `FirstOrFail`, `FindByID`, `Count`, `Ex
 Anything else is reported as pending with a reason and keeps running through the
 builder. Pending stubs are never emitted as broken functions. Runtime-only
 terminals (`ChunkByID`, `Upsert`, `FirstOrCreate`, `UpdateOrCreate`) still emit
-parameterized SQL when called on the builder.
+parameterized SQL when called on the builder. `FirstOrCreate` / `UpdateOrCreate`
+require a unique index on the attrs columns — generate fails without one (attrs
+must be a map literal checked against `Meta.Indexes`).
 
 `WhereHas` / `WhereDoesntHave` / `WhereRelation`, `WithCount` / `WithExists`,
 `WhereFullText`, `WhereJsonContains`, and `DistinctOn` also lower when names and

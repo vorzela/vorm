@@ -171,12 +171,16 @@ func quoteIdentList(d Dialect, cols []string) ([]string, error) {
 }
 
 // FirstOrCreate finds by attrs or inserts attrs merged with values.
-// Runtime builder only (not lowered to vorm/gen). Under concurrency, put a
-// unique index on the lookup columns: a racing insert surfaces as a unique
-// violation and FirstOrCreate re-selects the winner.
+// Runtime builder only (not lowered to vorm/gen). Requires a unique index on
+// the attrs columns (enforced here and by vorm generate). Under concurrency a
+// racing insert surfaces as a unique violation and FirstOrCreate re-selects.
 func (b *Builder[T]) FirstOrCreate(ctx context.Context, db DB, attrs map[string]any, values ...map[string]any) (*T, error) {
+	keys := sortedKeys(attrs)
+	if err := b.meta.RequireUniqueLookup(keys); err != nil {
+		return nil, validationErr("insert", b.meta.Table, "%s", err.Error())
+	}
 	find := b.clone()
-	for _, k := range sortedKeys(attrs) {
+	for _, k := range keys {
 		find.Where(k, attrs[k])
 	}
 	row, err := find.First(ctx, db)
@@ -203,13 +207,17 @@ func (b *Builder[T]) FirstOrCreate(ctx context.Context, db DB, attrs map[string]
 }
 
 // UpdateOrCreate finds by attrs and updates, or inserts attrs merged with values.
-// Runtime builder only (not lowered to vorm/gen). Under concurrency, put a
-// unique index on the lookup columns: a racing insert surfaces as a unique
-// violation and UpdateOrCreate re-selects then updates. Prefer Upsert when you
-// already know the conflict target columns.
+// Runtime builder only (not lowered to vorm/gen). Requires a unique index on
+// the attrs columns (enforced here and by vorm generate). Under concurrency a
+// racing insert surfaces as a unique violation and UpdateOrCreate re-selects
+// then updates. Prefer Upsert when you already know the conflict target.
 func (b *Builder[T]) UpdateOrCreate(ctx context.Context, db DB, attrs, values map[string]any) (*T, error) {
+	keys := sortedKeys(attrs)
+	if err := b.meta.RequireUniqueLookup(keys); err != nil {
+		return nil, validationErr("update", b.meta.Table, "%s", err.Error())
+	}
 	find := b.clone()
-	for _, k := range sortedKeys(attrs) {
+	for _, k := range keys {
 		find.Where(k, attrs[k])
 	}
 	row, err := find.First(ctx, db)

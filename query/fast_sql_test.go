@@ -20,6 +20,10 @@ func fastUsers() *Entity[fastUser] {
 		Table:      "users",
 		Columns:    []string{"id", "email", "age"},
 		PrimaryKey: "id",
+		Indexes: []IndexInfo{
+			{Name: "users_pkey", Columns: []string{"id"}, Unique: true, Primary: true},
+			{Name: "users_email_key", Columns: []string{"email"}, Unique: true},
+		},
 	})
 }
 
@@ -362,6 +366,46 @@ func TestWhereHasAndWithCountSQL(t *testing.T) {
 	}
 	if !strings.Contains(sql, "NOT EXISTS") {
 		t.Fatalf("doesntHave: %s", sql)
+	}
+}
+
+func TestFirstOrCreateRequiresUniqueIndex(t *testing.T) {
+	Users := Model[fastUser](Meta{
+		Table: "users", Columns: []string{"id", "email", "age"}, PrimaryKey: "id",
+		// no Indexes, attrs is email — not the PK
+	})
+	_, err := Users.FirstOrCreate(context.Background(), &fakeDB{}, map[string]any{"email": "a@x.io"})
+	if err == nil || !IsValidationError(err) {
+		t.Fatalf("want validation error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "unique index") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestMetaUniqueOn(t *testing.T) {
+	m := Meta{
+		Table: "users", PrimaryKey: "id",
+		Indexes: []IndexInfo{
+			{Name: "users_email_key", Columns: []string{"email"}, Unique: true},
+			{Name: "users_email_tenant", Columns: []string{"tenant_id", "email"}, Unique: true},
+			{Name: "users_partial", Columns: []string{"name"}, Unique: true, Partial: true},
+		},
+	}
+	if !m.UniqueOn("id") {
+		t.Fatal("primary key must count")
+	}
+	if !m.UniqueOn("email") {
+		t.Fatal("unique email")
+	}
+	if !m.UniqueOn("email", "tenant_id") {
+		t.Fatal("composite unique")
+	}
+	if m.UniqueOn("name") {
+		t.Fatal("partial unique must not count")
+	}
+	if m.UniqueOn("age") {
+		t.Fatal("non-unique")
 	}
 }
 
