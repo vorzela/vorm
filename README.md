@@ -141,6 +141,18 @@ var Users = query.Model[User](query.Meta{
 Without a reachable database, `--from-blueprint` parses numbered `migrations/*.go`
 instead. `vorm introspect [--json]` prints exactly what vorm reads.
 
+When `DATABASE_URL` is set, `vorm generate queries` and `vorm check` verify that
+on-disk `models/` still match the live schema (tables, columns, Go types) — the
+same class of gate sqlc applies to queries. Drift fails with `run: vorm generate models`.
+
+To add a column to an existing table:
+
+```bash
+vorm make migration add_phone_to_users   # scaffolds t.String("phone") / DropColumn
+# edit the Blueprint if you need Text / Integer / … instead of String
+vorm migrate && vorm generate
+```
+
 ## Queries: runtime builder and generated functions
 
 Write a stub once. It is real, callable Go — and the generator lowers it to

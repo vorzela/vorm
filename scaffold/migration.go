@@ -26,6 +26,7 @@ func (d *MigrationDirs) defaults() {
 // MakeResult lists files created by MakeMigration.
 type MakeResult struct {
 	Table         string
+	Column        string // set for add_<col>_to_<table> / drop_<col>_from_<table>
 	MigrationFile string
 	Kind          string // create | pivot | alter
 }
@@ -35,9 +36,10 @@ type MakeResult struct {
 //	vorm make migration posts
 //	vorm make migration post_tag
 //	vorm make migration add_slug_to_posts
+//	vorm make migration drop_slug_from_posts
 func MakeMigration(rawName string, dirs MigrationDirs) (*MakeResult, error) {
 	dirs.defaults()
-	table, kind, pivot := classifyName(rawName)
+	table, kind, pivot, column, action := classifyName(rawName)
 	if err := os.MkdirAll(dirs.Dir, 0o755); err != nil {
 		return nil, err
 	}
@@ -52,7 +54,14 @@ func MakeMigration(rawName string, dirs MigrationDirs) (*MakeResult, error) {
 		body = pivotSource(pivot)
 	case "alter":
 		filename = snakeName(rawName) + ".go"
-		body = alterSource(table)
+		switch {
+		case action == "add" && column != "":
+			body = alterAddSource(table, column)
+		case action == "drop" && column != "":
+			body = alterDropSource(table, column)
+		default:
+			body = alterSource(table)
+		}
 	default:
 		filename = "create_" + table + "_table.go"
 		body = createSource(table)
@@ -65,7 +74,7 @@ func MakeMigration(rawName string, dirs MigrationDirs) (*MakeResult, error) {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		return nil, err
 	}
-	return &MakeResult{Table: table, MigrationFile: path, Kind: kind}, nil
+	return &MakeResult{Table: table, Column: column, MigrationFile: path, Kind: kind}, nil
 }
 
 func uniquePath(dir, filename string) (string, error) {
@@ -79,7 +88,7 @@ func uniquePath(dir, filename string) (string, error) {
 	return "", fmt.Errorf("scaffold: could not pick a unique name for %s", filename)
 }
 
-func classifyName(raw string) (table, kind string, pivot *pivotHint) {
+func classifyName(raw string) (table, kind string, pivot *pivotHint, column, action string) {
 	name := strings.TrimSpace(raw)
 	name = strings.TrimSuffix(name, ".go")
 	name = strings.TrimPrefix(name, "create_")
@@ -87,8 +96,8 @@ func classifyName(raw string) (table, kind string, pivot *pivotHint) {
 	snake := snakeName(name)
 
 	if strings.HasPrefix(snake, "add_") || strings.HasPrefix(snake, "alter_") || strings.HasPrefix(snake, "drop_") {
-		table = tableFromAlter(snake)
-		return table, "alter", nil
+		table, column, action = parseAlter(snake)
+		return table, "alter", nil, column, action
 	}
 
 	parts := strings.Split(snake, "_")
@@ -97,20 +106,64 @@ func classifyName(raw string) (table, kind string, pivot *pivotHint) {
 		return snake, "pivot", &pivotHint{
 			LeftTable:  pluralize(left),
 			RightTable: pluralize(right),
-		}
+		}, "", ""
 	}
-	return snake, "create", nil
+	return snake, "create", nil, "", ""
 }
 
-func tableFromAlter(name string) string {
-	if i := strings.LastIndex(name, "_to_"); i >= 0 {
-		return name[i+4:]
+// parseAlter extracts table/column/action from alter-style names.
+//
+//	add_slug_to_posts          → add, slug, posts
+//	add_display_name_to_users  → add, display_name, users
+//	drop_slug_from_posts       → drop, slug, posts
+//	drop_slug_to_posts         → drop, slug, posts (symmetry)
+//	alter_posts / add_posts    → empty column (generic alter template)
+func parseAlter(name string) (table, column, action string) {
+	switch {
+	case strings.HasPrefix(name, "add_"):
+		action = "add"
+		rest := strings.TrimPrefix(name, "add_")
+		if i := strings.LastIndex(rest, "_to_"); i >= 0 {
+			column = rest[:i]
+			table = rest[i+4:]
+			return table, column, action
+		}
+		table = strings.TrimSuffix(rest, "_table")
+		return table, "", action
+	case strings.HasPrefix(name, "drop_"):
+		action = "drop"
+		rest := strings.TrimPrefix(name, "drop_")
+		if i := strings.LastIndex(rest, "_from_"); i >= 0 {
+			column = rest[:i]
+			table = rest[i+6:]
+			return table, column, action
+		}
+		if i := strings.LastIndex(rest, "_to_"); i >= 0 {
+			column = rest[:i]
+			table = rest[i+4:]
+			return table, column, action
+		}
+		table = strings.TrimSuffix(rest, "_table")
+		return table, "", action
+	default: // alter_
+		action = "alter"
+		rest := strings.TrimPrefix(name, "alter_")
+		if i := strings.LastIndex(rest, "_to_"); i >= 0 {
+			// alter_slug_to_posts treated like add
+			column = rest[:i]
+			table = rest[i+4:]
+			action = "add"
+			return table, column, action
+		}
+		table = strings.TrimSuffix(rest, "_table")
+		return table, "", action
 	}
-	name = strings.TrimPrefix(name, "add_")
-	name = strings.TrimPrefix(name, "alter_")
-	name = strings.TrimPrefix(name, "drop_")
-	name = strings.TrimSuffix(name, "_table")
-	return name
+}
+
+// tableFromAlter is kept for tests / callers that only need the table name.
+func tableFromAlter(name string) string {
+	table, _, _ := parseAlter(name)
+	return table
 }
 
 type pivotHint struct {
@@ -182,6 +235,54 @@ func Down(s *schema.Facade) {
 	})
 }
 `, table, table)
+}
+
+func alterAddSource(table, column string) string {
+	if table == "" {
+		table = "table_name"
+	}
+	return fmt.Sprintf(`//go:build ignore
+
+package migrations
+
+import "github.com/vorzela/vorm/schema"
+
+func Up(s *schema.Facade) {
+	s.Table(%q, func(t *schema.Blueprint) {
+		t.String(%q) // change to Text / Integer / … as needed
+	})
+}
+
+func Down(s *schema.Facade) {
+	s.Table(%q, func(t *schema.Blueprint) {
+		t.DropColumn(%q)
+	})
+}
+`, table, column, table, column)
+}
+
+func alterDropSource(table, column string) string {
+	if table == "" {
+		table = "table_name"
+	}
+	return fmt.Sprintf(`//go:build ignore
+
+package migrations
+
+import "github.com/vorzela/vorm/schema"
+
+func Up(s *schema.Facade) {
+	s.Table(%q, func(t *schema.Blueprint) {
+		t.DropColumn(%q)
+	})
+}
+
+func Down(s *schema.Facade) {
+	s.Table(%q, func(t *schema.Blueprint) {
+		t.String(%q) // restore type to match what was dropped
+	})
+}
+`, table, column, table, column)
 }
 
 func schemaPivotName(left, right string) string {

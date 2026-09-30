@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.8] — 2026-09-30
+
+### Added
+
+- `vorm check` / `vorm generate queries` verify `models/` against the live
+  database schema (tables, columns, Go types) when `DATABASE_URL` is set.
+- `vorm make migration add_<column>_to_<table>` scaffolds real
+  `t.String("<column>")` / `t.DropColumn` Blueprint alters (default type
+  `String`). `drop_<column>_from_<table>` is supported too.
+
 ## [0.2.7] — 2026-09-30
 
 ### Changed
@@ -115,10 +125,11 @@ gen:
 - First standalone release: in-process migrations, database-introspected models, and `// vorm:query` stubs lowered to parameterized sqlc-style Go.
 
 ```
-go install github.com/vorzela/vorm/cmd/vorm@v0.2.7
+go install github.com/vorzela/vorm/cmd/vorm@v0.2.8
 ```
 
-[Unreleased]: https://github.com/vorzela/vorm/compare/v0.2.7...HEAD
+[Unreleased]: https://github.com/vorzela/vorm/compare/v0.2.8...HEAD
+[0.2.8]: https://github.com/vorzela/vorm/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/vorzela/vorm/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/vorzela/vorm/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/vorzela/vorm/compare/v0.2.4...v0.2.5

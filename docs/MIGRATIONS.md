@@ -91,13 +91,20 @@ unreleased, then rebuilding with `vorm fresh --force`. Long `add_*` / `alter_*`
 chains are worth it only once the migration has been applied somewhere you
 cannot reset.
 
-Once a table exists in an environment you cannot drop, write the alter
-(`vorm make migration add_phone_to_users`):
+Once a table exists in an environment you cannot drop, scaffold an alter with the
+column name in the migration title:
+
+```bash
+vorm make migration add_phone_to_users
+```
+
+That writes ready Blueprint code (default column type is `String` — change to
+`Text` / `Integer` / … as needed):
 
 ```go
 func Up(s *schema.Facade) {
 	s.Table("users", func(t *schema.Blueprint) {
-		t.String("phone", 32)
+		t.String("phone") // change to Text / Integer / … as needed
 	})
 }
 
@@ -108,7 +115,8 @@ func Down(s *schema.Facade) {
 }
 ```
 
-Then `vorm generate` to pick the column up in the models.
+Then `vorm migrate && vorm generate` to apply and refresh models. `vorm check`
+fails if `models/` drifts from the live schema after a migrate without regenerate.
 
 ## PostgreSQL prerequisites
 

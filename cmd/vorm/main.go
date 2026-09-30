@@ -60,12 +60,16 @@ func main() {
 		if err := cmdIntrospect(args); err != nil {
 			fatal(err)
 		}
+	case "check":
+		if err := cmdCheck(args); err != nil {
+			fatal(err)
+		}
 	case "generate":
 		if err := cmdGenerate(args); err != nil {
 			fatal(err)
 		}
 	case "version", "--version":
-		fmt.Println("vorm 0.2.7 (Vorzela v3)")
+		fmt.Println("vorm 0.2.8 (Vorzela v3)")
 	case "help", "--help", "-h":
 		usage()
 	default:
@@ -369,6 +373,8 @@ func cmdGenerate(args []string) error {
 					fmt.Println(" ", f)
 				}
 			}
+		} else if err := ensureModelsMatchSchema(cfg, dsn, false); err != nil {
+			return err
 		}
 		opts := cfg.ToGenerateOptions()
 		if opts.Dialect == "" {
@@ -393,6 +399,54 @@ func cmdGenerate(args []string) error {
 	default:
 		return fmt.Errorf("usage: vorm generate [models|queries|all] [--driver=pgx|pq] [--package=gen]")
 	}
+}
+
+// ensureModelsMatchSchema diffs models/ against the live schema when a database
+// URL is available. required=true fails on connect errors (vorm check);
+// required=false skips with a warning when the DB is unreachable.
+func ensureModelsMatchSchema(cfg *config.Config, dsn string, required bool) error {
+	if dsn == "" && cfg.ResolveDatabaseURL() == "" {
+		return nil
+	}
+	schema, err := loadSchema(context.Background(), cfg, dsn)
+	if err != nil {
+		if required {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "vorm: skip schema check: %v\n", err)
+		return nil
+	}
+	return generate.CheckModelsDir(cfg.ModelDir, schema, schema.Dialect)
+}
+
+func cmdCheck(args []string) error {
+	cfg, err := config.Load(".")
+	if err != nil {
+		return err
+	}
+	var dsn string
+	for _, a := range args {
+		if after, ok := strings.CutPrefix(a, "--dsn="); ok {
+			dsn = after
+			continue
+		}
+		switch a {
+		case "models":
+			continue
+		case "--help", "-h":
+			return fmt.Errorf("usage: vorm check [models] [--dsn=]")
+		default:
+			return fmt.Errorf("usage: vorm check [models] [--dsn=]")
+		}
+	}
+	if dsn == "" && cfg.ResolveDatabaseURL() == "" {
+		return fmt.Errorf("vorm check needs DATABASE_URL (or --dsn) to compare models against the live schema")
+	}
+	if err := ensureModelsMatchSchema(cfg, dsn, true); err != nil {
+		return err
+	}
+	fmt.Println("vorm check: models match database schema")
+	return nil
 }
 
 // generateModels prefers live introspection — it is the only source that knows
@@ -445,6 +499,7 @@ Setup:
 
 Migrations:
   vorm make migration posts         # timestamped Blueprint Up/Down in migrations/
+  vorm make migration add_slug_to_posts  # alter: t.String("slug") / DropColumn
   vorm make belongs-to posts users  # alter: t.BelongsTo("user_id", "users")
   vorm make has-one users profiles  # unique FK on the child
   vorm make has-many users posts    # FK on the child (same as belongs-to)
@@ -466,8 +521,10 @@ PostgreSQL prerequisites (declarative files next to the migrations):
 
 Code generation:
   vorm introspect [--json]          # what vorm reads from the live database
+  vorm check [models]               # models/ must match live schema (needs DATABASE_URL)
   vorm generate models              # structs, enums, indexes, relations, functions
   vorm generate                     # models + typed queries from // vorm:query stubs
+  vorm generate queries             # typed queries; fails if models drift from schema
     --from-db | --from-blueprint    # model source (default: db when reachable)
     --dsn=… --driver=pgx|pq --package=gen
 

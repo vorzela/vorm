@@ -82,6 +82,10 @@ YAML keys: `version`, `package`, `out_dir`, `query_dir`, `model_dir`,
 `emit_functions`, `include_views`, `emit_sql_as_comment`, `database_url`,
 `gen.go.emit_sql_as_comment`.
 
+When `DATABASE_URL` is set, `vorm check` / `vorm generate queries` require
+`models/` to match the live schema. Alter columns with
+`vorm make migration add_<col>_to_<table>` (default `t.String`).
+
 See README (vorm / vm / sqlc) and `docs/API.md` for the full table.
 
 ## PostgreSQL prerequisites

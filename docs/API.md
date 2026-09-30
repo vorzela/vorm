@@ -48,7 +48,7 @@ vorm config set KEY=value
 vorm config keys
 vorm config lint [vorm.yaml]
 
-vorm make migration <name>          # create | pivot (post_tag) | alter (add_*_to_*)
+vorm make migration <name>          # create | pivot (post_tag) | alter (add_<col>_to_<table>)
 vorm make belongs-to <child> <parent> [column]
 vorm make has-one <parent> <child> [column]
 vorm make has-many <parent> <child> [column]
@@ -71,6 +71,7 @@ vorm enums [status] [--force] [--dry-run] [--drop-disabled]
 vorm functions [--force] [--dry-run] [--drop-disabled]
 
 vorm introspect [--json] [--dsn=]
+vorm check [models] [--dsn=]        # models/ must match live schema
 vorm generate [models|queries|all]
     --from-db | --from-blueprint
     --dsn=… --driver=pgx|pq --package=gen

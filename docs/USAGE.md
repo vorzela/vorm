@@ -167,7 +167,16 @@ func Down(s *schema.Facade) {
 
 `vorm migrate` compiles `Up`/`Down` to SQL and applies it. Then
 `vorm generate models` introspects the live database (or `--from-blueprint` to
-parse the same Go files).
+parse the same Go files). When `DATABASE_URL` is set, `vorm check` (and
+`vorm generate queries`) fail if `models/` drifts from that live schema.
+
+**Add a column to an existing table** with the column in the migration name
+(default type `String` — edit the Blueprint for other types):
+
+```bash
+vorm make migration add_phone_to_users
+vorm make migration drop_phone_from_users
+```
 
 **Relationship migrations.** These write an alter or a pivot instead of a full
 create:
