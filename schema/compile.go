@@ -453,6 +453,89 @@ func applyRoot(filename string, bp *Blueprint, root callStep) (*Column, error) {
 			return nil, fmt.Errorf("schema: %s: BigInteger needs a column name", filename)
 		}
 		return bp.BigInteger(name), nil
+	case "SmallInteger":
+		name, err := stringLiteral(root.args, 0)
+		if err != nil {
+			return nil, fmt.Errorf("schema: %s: SmallInteger needs a column name", filename)
+		}
+		return bp.SmallInteger(name), nil
+	case "Float":
+		name, err := stringLiteral(root.args, 0)
+		if err != nil {
+			return nil, fmt.Errorf("schema: %s: Float needs a column name", filename)
+		}
+		return bp.Float(name), nil
+	case "Double":
+		name, err := stringLiteral(root.args, 0)
+		if err != nil {
+			return nil, fmt.Errorf("schema: %s: Double needs a column name", filename)
+		}
+		return bp.Double(name), nil
+	case "Decimal":
+		name, err := stringLiteral(root.args, 0)
+		if err != nil {
+			return nil, fmt.Errorf("schema: %s: Decimal needs a column name", filename)
+		}
+		if len(root.args) < 3 {
+			return nil, fmt.Errorf("schema: %s: Decimal needs precision and scale", filename)
+		}
+		prec, err := intLiteral(root.args[1])
+		if err != nil {
+			return nil, fmt.Errorf("schema: %s: Decimal precision must be an int literal: %w", filename, err)
+		}
+		scale, err := intLiteral(root.args[2])
+		if err != nil {
+			return nil, fmt.Errorf("schema: %s: Decimal scale must be an int literal: %w", filename, err)
+		}
+		return bp.Decimal(name, prec, scale), nil
+	case "Timestamp":
+		name, err := stringLiteral(root.args, 0)
+		if err != nil {
+			return nil, fmt.Errorf("schema: %s: Timestamp needs a column name", filename)
+		}
+		return bp.Timestamp(name), nil
+	case "TimestampTz":
+		name, err := stringLiteral(root.args, 0)
+		if err != nil {
+			return nil, fmt.Errorf("schema: %s: TimestampTz needs a column name", filename)
+		}
+		return bp.TimestampTz(name), nil
+	case "Date":
+		name, err := stringLiteral(root.args, 0)
+		if err != nil {
+			return nil, fmt.Errorf("schema: %s: Date needs a column name", filename)
+		}
+		return bp.Date(name), nil
+	case "DateTime":
+		name, err := stringLiteral(root.args, 0)
+		if err != nil {
+			return nil, fmt.Errorf("schema: %s: DateTime needs a column name", filename)
+		}
+		return bp.DateTime(name), nil
+	case "Time":
+		name, err := stringLiteral(root.args, 0)
+		if err != nil {
+			return nil, fmt.Errorf("schema: %s: Time needs a column name", filename)
+		}
+		return bp.Time(name), nil
+	case "Json", "Jsonb":
+		name, err := stringLiteral(root.args, 0)
+		if err != nil {
+			return nil, fmt.Errorf("schema: %s: %s needs a column name", filename, root.name)
+		}
+		return bp.Json(name), nil
+	case "Binary", "Bytea":
+		name, err := stringLiteral(root.args, 0)
+		if err != nil {
+			return nil, fmt.Errorf("schema: %s: %s needs a column name", filename, root.name)
+		}
+		return bp.Binary(name), nil
+	case "Inet":
+		name, err := stringLiteral(root.args, 0)
+		if err != nil {
+			return nil, fmt.Errorf("schema: %s: Inet needs a column name", filename)
+		}
+		return bp.Inet(name), nil
 	case "ForeignID", "ForeignId":
 		name, err := stringLiteral(root.args, 0)
 		if err != nil {
@@ -492,7 +575,7 @@ func applyRoot(filename string, bp *Blueprint, root callStep) (*Column, error) {
 			return nil, fmt.Errorf("schema: %s: Enum %q needs at least one value", filename, col)
 		}
 		return bp.Enum(col, vals...), nil
-	case "Timestamps":
+	case "Timestamps", "TimestampsTz":
 		bp.Timestamps()
 		return nil, nil
 	case "SoftDeletes":

@@ -221,13 +221,7 @@ func (c *Column) sql(dialect string) string {
 		b.WriteString(quoteEnumValues(c.enumValues))
 		b.WriteString(")")
 	default:
-		if mysql && c.dataType == "INTEGER" {
-			b.WriteString("INT")
-		} else if mysql && c.dataType == "BOOLEAN" {
-			b.WriteString("TINYINT(1)")
-		} else {
-			b.WriteString(c.dataType)
-		}
+		b.WriteString(c.sqlDataType(dialect))
 	}
 
 	if !c.autoInc || !c.isPrimary {
@@ -263,6 +257,46 @@ func (c *Column) sql(dialect string) string {
 		}
 	}
 	return b.String()
+}
+
+// sqlDataType maps the stored (Postgres-oriented) type onto the target dialect.
+// CustomType values are never remapped.
+func (c *Column) sqlDataType(dialect string) string {
+	if c.custom {
+		return c.dataType
+	}
+	mysql := dialect == "mysql" || dialect == "mariadb"
+	upper := strings.ToUpper(c.dataType)
+	if !mysql {
+		if upper == "DATETIME" {
+			return "TIMESTAMP"
+		}
+		return c.dataType
+	}
+	switch {
+	case upper == "TIMESTAMPTZ":
+		return "TIMESTAMP"
+	case upper == "DATETIME":
+		return "DATETIME"
+	case upper == "JSONB", upper == "JSON":
+		return "JSON"
+	case upper == "REAL":
+		return "FLOAT"
+	case upper == "DOUBLE PRECISION":
+		return "DOUBLE"
+	case strings.HasPrefix(upper, "NUMERIC"):
+		return "DECIMAL" + c.dataType[len("NUMERIC"):]
+	case upper == "BYTEA":
+		return "BLOB"
+	case upper == "INET":
+		return "VARCHAR(45)"
+	case upper == "INTEGER":
+		return "INT"
+	case upper == "BOOLEAN":
+		return "TINYINT(1)"
+	default:
+		return c.dataType
+	}
 }
 
 // defaultSQL is an explicit Default(), or the v4 generator for t.UUID().

@@ -7,7 +7,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/vorzela/vorm/config"
@@ -193,13 +192,24 @@ func printReport(cmd string, report *migrate.Report, dryRun bool) {
 	if report == nil {
 		return
 	}
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	for _, s := range report.Prereq {
-		fmt.Fprintf(w, "  prereq\t%s\t%s\n", s.Name, stepStatus(s))
+
+	header := "Running migrations"
+	switch cmd {
+	case "rollback":
+		header = "Rolling back migrations"
+	case "fresh", "refresh":
+		header = "Refreshing migrations"
 	}
-	// A fresh run reverts and re-applies, so label each half rather than
-	// reporting one file twice under the same verb.
+	if dryRun {
+		header = "Dry run: " + header
+	}
+	fmt.Printf("\n  %s %s.\n\n", cyanBold("INFO"), header)
+
+	const width = 72
 	var reverted, applied int
+	for _, s := range report.Prereq {
+		printStepLine("prereq", s, width)
+	}
 	for _, s := range report.Steps {
 		label := cmd
 		if s.Down {
@@ -212,70 +222,122 @@ func printReport(cmd string, report *migrate.Report, dryRun bool) {
 				applied++
 			}
 		}
-		fmt.Fprintf(w, "  %s\t%s\t%s\n", label, s.Name, stepStatus(s))
+		printStepLine(label, s, width)
 	}
-	w.Flush()
 
+	fmt.Println()
 	prefix := ""
 	if dryRun {
 		prefix = "dry run: "
 	}
 	switch {
 	case report.Failed > 0:
-		fmt.Printf("%s%s: %d applied, %d failed\n", prefix, cmd, report.Applied, report.Failed)
+		fmt.Printf("  %s %s%d applied, %d failed\n",
+			redBold("FAIL"), prefix, report.Applied, report.Failed)
 	case report.Applied == 0:
-		fmt.Printf("%s%s: nothing to do\n", prefix, cmd)
+		fmt.Printf("  %s %snothing to do\n", yellowBold("INFO"), prefix)
 	case reverted > 0 && applied > 0:
-		fmt.Printf("%s%s: %d reverted, %d re-applied in batch %d\n", prefix, cmd, reverted, applied, report.Batch)
+		fmt.Printf("  %s %s%d reverted, %d re-applied in batch %d\n",
+			greenBold("DONE"), prefix, reverted, applied, report.Batch)
 	case report.Batch > 0:
-		fmt.Printf("%s%s: %d migration(s) in batch %d\n", prefix, cmd, report.Applied, report.Batch)
+		fmt.Printf("  %s %s%d migration(s) in batch %d\n",
+			greenBold("DONE"), prefix, report.Applied, report.Batch)
 	default:
-		fmt.Printf("%s%s: %d migration(s)\n", prefix, cmd, report.Applied)
+		fmt.Printf("  %s %s%d migration(s)\n",
+			greenBold("DONE"), prefix, report.Applied)
 	}
+	fmt.Println()
+}
+
+func printStepLine(label string, s migrate.StepResult, width int) {
+	name := s.Name
+	if label == "prereq" {
+		name = "prereq/" + s.Name
+	}
+	status, colored := stepStatusParts(s)
+	plain := padDots("  "+name, status, width)
+	if colorEnabled() {
+		idx := strings.LastIndex(plain, status)
+		if idx >= 0 {
+			plain = plain[:idx] + colored
+		}
+	}
+	fmt.Println(plain)
 }
 
 func stepStatus(s migrate.StepResult) string {
+	plain, _ := stepStatusParts(s)
+	return plain
+}
+
+func stepStatusParts(s migrate.StepResult) (plain, colored string) {
 	switch {
 	case s.Err != nil:
-		return "FAILED: " + s.Err.Error()
-	case s.Skipped:
-		if s.Reason != "" {
-			return "skipped (" + s.Reason + ")"
+		msg := "FAILED"
+		if s.Err.Error() != "" {
+			msg = "FAILED: " + s.Err.Error()
 		}
-		return "skipped"
+		return msg, redBold(msg)
+	case s.Skipped:
+		msg := "SKIPPED"
+		if s.Reason != "" {
+			msg = "SKIPPED (" + s.Reason + ")"
+		}
+		return msg, yellow(msg)
 	case s.Applied:
-		return fmt.Sprintf("ok (%s)", s.Duration.Round(time.Millisecond))
+		dur := s.Duration.Round(time.Millisecond).String()
+		msg := dur + " DONE"
+		return msg, gray(dur) + " " + greenBold("DONE")
 	default:
-		return "pending"
+		return "PENDING", yellow("PENDING")
 	}
 }
 
 func printStatus(rows []migrate.StatusRow) {
 	if len(rows) == 0 {
-		fmt.Println("no migrations found")
+		fmt.Printf("\n  %s no migrations found\n\n", yellowBold("INFO"))
 		return
 	}
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "MIGRATION\tSTATUS\tBATCH")
+	fmt.Printf("\n  %s Migration status.\n\n", cyanBold("INFO"))
+
+	const width = 72
 	pending := 0
 	for _, r := range rows {
-		status := "pending"
-		batch := ""
+		var status, colored string
 		switch {
 		case r.Missing:
 			status = "MISSING FILE"
-			batch = strconv.Itoa(r.Batch)
+			colored = redBold(status)
+			if r.Batch > 0 {
+				status = fmt.Sprintf("MISSING FILE (batch %d)", r.Batch)
+				colored = redBold(status)
+			}
 		case r.Applied && !r.ChecksumOK:
-			status = "CHANGED SINCE APPLIED"
-			batch = strconv.Itoa(r.Batch)
+			status = fmt.Sprintf("CHANGED (batch %d)", r.Batch)
+			colored = yellowBold(status)
 		case r.Applied:
-			status = "applied"
-			batch = strconv.Itoa(r.Batch)
+			status = fmt.Sprintf("Ran (batch %d)", r.Batch)
+			colored = green(status)
 		default:
+			status = "Pending"
+			colored = yellow(status)
 			pending++
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\n", r.Name, status, batch)
+		line := padDots("  "+r.Name, status, width)
+		if colorEnabled() {
+			idx := strings.LastIndex(line, status)
+			if idx >= 0 {
+				line = line[:idx] + colored
+			}
+		}
+		fmt.Println(line)
 	}
-	w.Flush()
-	fmt.Printf("\n%d migration(s), %d pending\n", len(rows), pending)
+	fmt.Printf("\n  %s %d migration(s), %s\n\n",
+		cyanBold("INFO"), len(rows),
+		func() string {
+			if pending == 0 {
+				return green("nothing pending")
+			}
+			return yellow(fmt.Sprintf("%d pending", pending))
+		}())
 }

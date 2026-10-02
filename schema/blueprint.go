@@ -101,6 +101,73 @@ func (b *Blueprint) BigInteger(name string) *Column {
 	return b.add(newColumn(name).typ("BIGINT").NotNull())
 }
 
+// SmallInteger adds SMALLINT NOT NULL.
+func (b *Blueprint) SmallInteger(name string) *Column {
+	return b.add(newColumn(name).typ("SMALLINT").NotNull())
+}
+
+// Float adds REAL (Postgres) / FLOAT (MySQL) NOT NULL.
+func (b *Blueprint) Float(name string) *Column {
+	return b.add(newColumn(name).typ("REAL").NotNull())
+}
+
+// Double adds DOUBLE PRECISION (Postgres) / DOUBLE (MySQL) NOT NULL.
+func (b *Blueprint) Double(name string) *Column {
+	return b.add(newColumn(name).typ("DOUBLE PRECISION").NotNull())
+}
+
+// Decimal adds NUMERIC(p,s) (Postgres) / DECIMAL(p,s) (MySQL) NOT NULL.
+func (b *Blueprint) Decimal(name string, precision, scale int) *Column {
+	return b.add(newColumn(name).typ(fmt.Sprintf("NUMERIC(%d,%d)", precision, scale)).NotNull())
+}
+
+// Timestamp adds TIMESTAMP NOT NULL (no time zone). Prefer TimestampTz when
+// you want Postgres TIMESTAMPTZ.
+func (b *Blueprint) Timestamp(name string) *Column {
+	return b.add(newColumn(name).typ("TIMESTAMP").NotNull())
+}
+
+// TimestampTz adds TIMESTAMPTZ on Postgres and TIMESTAMP on MySQL/MariaDB.
+func (b *Blueprint) TimestampTz(name string) *Column {
+	return b.add(newColumn(name).typ("TIMESTAMPTZ").NotNull())
+}
+
+// Date adds DATE NOT NULL.
+func (b *Blueprint) Date(name string) *Column {
+	return b.add(newColumn(name).typ("DATE").NotNull())
+}
+
+// DateTime adds TIMESTAMP on Postgres and DATETIME on MySQL/MariaDB.
+func (b *Blueprint) DateTime(name string) *Column {
+	return b.add(newColumn(name).typ("DATETIME").NotNull())
+}
+
+// Time adds TIME NOT NULL.
+func (b *Blueprint) Time(name string) *Column {
+	return b.add(newColumn(name).typ("TIME").NotNull())
+}
+
+// Json adds JSONB on Postgres and JSON on MySQL/MariaDB (nullable like Text).
+func (b *Blueprint) Json(name string) *Column {
+	return b.add(newColumn(name).typ("JSONB").Nullable())
+}
+
+// Jsonb is an alias of Json.
+func (b *Blueprint) Jsonb(name string) *Column { return b.Json(name) }
+
+// Binary adds BYTEA on Postgres and BLOB on MySQL/MariaDB.
+func (b *Blueprint) Binary(name string) *Column {
+	return b.add(newColumn(name).typ("BYTEA").NotNull())
+}
+
+// Bytea is an alias of Binary.
+func (b *Blueprint) Bytea(name string) *Column { return b.Binary(name) }
+
+// Inet adds INET on Postgres and VARCHAR(45) on MySQL/MariaDB.
+func (b *Blueprint) Inet(name string) *Column {
+	return b.add(newColumn(name).typ("INET").NotNull())
+}
+
 // ForeignID adds BIGINT NOT NULL FK column — chain .Constrained("users").
 func (b *Blueprint) ForeignID(name string) *Column {
 	return b.add(newColumn(name).typ("BIGINT").NotNull())
@@ -160,11 +227,15 @@ func (b *Blueprint) Enum(column string, values ...string) *Column {
 	return b.add(newColumn(column).enumType(typeName, values).NotNull())
 }
 
-// Timestamps adds created_at / updated_at.
+// Timestamps adds created_at / updated_at as TIMESTAMPTZ on Postgres and
+// TIMESTAMP on MySQL/MariaDB.
 func (b *Blueprint) Timestamps() {
 	b.add(newColumn("created_at").timestamp().DefaultCurrent())
 	b.add(newColumn("updated_at").timestamp().DefaultCurrent())
 }
+
+// TimestampsTz is an alias of Timestamps (already timestamptz on Postgres).
+func (b *Blueprint) TimestampsTz() { b.Timestamps() }
 
 // SoftDeletes adds deleted_at nullable timestamp.
 func (b *Blueprint) SoftDeletes() {

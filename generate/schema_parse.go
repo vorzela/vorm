@@ -203,7 +203,7 @@ func applyBlueprintCall(call *ast.CallExpr, spec *TableSpec) {
 	switch rootName {
 	case "ID", "Id":
 		spec.HasID = true
-	case "Timestamps":
+	case "Timestamps", "TimestampsTz":
 		spec.Timestamps = true
 	case "SoftDeletes":
 		spec.SoftDeletes = true
@@ -218,8 +218,29 @@ func applyBlueprintCall(call *ast.CallExpr, spec *TableSpec) {
 		addCol(spec, stringArg(rootArgs, 0), "bool", "bool", flags)
 	case "Integer":
 		addCol(spec, stringArg(rootArgs, 0), "int", "int", flags)
+	case "SmallInteger":
+		addCol(spec, stringArg(rootArgs, 0), "smallint", "int16", flags)
 	case "BigInteger", "ForeignID", "ForeignId":
 		addCol(spec, stringArg(rootArgs, 0), "bigint", "int64", flags)
+	case "Float":
+		addCol(spec, stringArg(rootArgs, 0), "real", "float32", flags)
+	case "Double":
+		addCol(spec, stringArg(rootArgs, 0), "double precision", "float64", flags)
+	case "Decimal":
+		addCol(spec, stringArg(rootArgs, 0), "numeric", "string", flags)
+	case "Timestamp", "TimestampTz", "Date", "DateTime":
+		addCol(spec, stringArg(rootArgs, 0), "timestamp", "time.Time", flags)
+	case "Time":
+		addCol(spec, stringArg(rootArgs, 0), "time", "string", flags)
+	case "Json", "Jsonb":
+		addCol(spec, stringArg(rootArgs, 0), "jsonb", "json.RawMessage", flags)
+		if len(spec.Columns) > 0 {
+			spec.Columns[len(spec.Columns)-1].Nullable = true
+		}
+	case "Binary", "Bytea":
+		addCol(spec, stringArg(rootArgs, 0), "bytea", "[]byte", flags)
+	case "Inet":
+		addCol(spec, stringArg(rootArgs, 0), "inet", "string", flags)
 	case "UUID":
 		addCol(spec, stringArg(rootArgs, 0), "uuid", "string", flags)
 	case "Enum":
@@ -318,21 +339,29 @@ func chainedString(call *ast.CallExpr, method string) string {
 func customGoType(sqlType string) string {
 	switch normalizeDBType(sqlType) {
 	case "geography", "geometry", "citext", "ltree", "uuid", "text", "varchar",
-		"tsvector", "tsquery", "xml", "inet", "cidr":
+		"tsvector", "tsquery", "xml", "inet", "cidr", "macaddr", "macaddr8",
+		"time", "timetz", "character varying", "char", "character", "bpchar", "name":
 		return "string"
 	case "bool", "boolean":
 		return "bool"
-	case "int2", "int4", "integer", "int", "serial":
+	case "int2", "smallint", "smallserial":
+		return "int16"
+	case "int4", "integer", "int", "serial":
 		return "int"
 	case "int8", "bigint", "bigserial":
 		return "int64"
-	case "float4", "float8", "real":
+	case "float4", "real":
+		return "float32"
+	case "float8", "double", "double precision":
 		return "float64"
+	case "numeric", "decimal", "money":
+		return "string"
 	case "json", "jsonb":
 		return "json.RawMessage"
-	case "bytea":
+	case "bytea", "blob", "binary", "varbinary":
 		return "[]byte"
-	case "timestamptz", "timestamp", "date":
+	case "timestamptz", "timestamp", "date", "datetime",
+		"timestamp with time zone", "timestamp without time zone":
 		return "time.Time"
 	default:
 		return "any"

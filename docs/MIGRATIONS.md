@@ -24,14 +24,25 @@ func Up(s *schema.Facade) {
 	s.Create("posts", func(t *schema.Blueprint) {
 		t.ID()
 		t.String("title")
+		t.Jsonb("meta")
+		t.TimestampTz("published_at").Nullable()
 		t.ForeignId("user_id").Constrained("users").CascadeOnDelete()
-		t.Timestamps()
+		t.Timestamps() // TIMESTAMPTZ on Postgres, TIMESTAMP on MySQL
 	})
 }
 
 func Down(s *schema.Facade) {
 	s.DropIfExists("posts")
 }
+```
+
+Built-in helpers cover common Postgres/MySQL types (`Jsonb`, `TimestampTz`,
+`Decimal`, `Inet`, …). Types that need a Postgres extension stay on
+`CustomType` after enabling them in `extensions.sql`:
+
+```go
+t.CustomType("citext").Column("email")
+t.CustomType("GEOGRAPHY(POINT, 4326)").Column("location")
 ```
 
 `vorm make migration posts` writes that file. `vorm make migration post_tag`
@@ -66,6 +77,9 @@ vorm fresh --force                # roll everything back, then re-apply
 `--dry-run` reports what would run without touching the database.
 `--skip-lock` is available for environments where advisory locks are
 unavailable, and should otherwise be left alone.
+
+Migrate / status / rollback print Laravel-style dotted lines with color when
+stdout is a TTY. Set `NO_COLOR=1` or `VORM_NO_COLOR=1` to force plain output.
 
 ## Safety
 

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.11] — 2026-10-02
+
+### Added
+
+- Blueprint column helpers for built-in types: `Timestamp`, `TimestampTz`,
+  `Date`, `DateTime`, `Time`, `Json`/`Jsonb`, `Float`, `Double`, `Decimal`,
+  `SmallInteger`, `Binary`/`Bytea`, `Inet`, plus `TimestampsTz` alias.
+  Extension types (`citext`, PostGIS, `ltree`) stay on `CustomType` after
+  `CREATE EXTENSION`.
+- Colored migrate / status / rollback output (Laravel/vm-style dotted lines,
+  green DONE / yellow Pending / red FAILED). Respects `NO_COLOR` and
+  `VORM_NO_COLOR`, and disables color when stdout is not a TTY.
+
+### Fixed
+
+- Blueprint model codegen and query emit import `encoding/json` when a column
+  is typed as `json.RawMessage` (json/jsonb).
+
 ## [0.2.10] — 2026-09-30
 
 ### Added
@@ -139,10 +157,11 @@ gen:
 - First standalone release: in-process migrations, database-introspected models, and `// vorm:query` stubs lowered to parameterized sqlc-style Go.
 
 ```
-go install github.com/vorzela/vorm/cmd/vorm@v0.2.10
+go install github.com/vorzela/vorm/cmd/vorm@v0.2.11
 ```
 
-[Unreleased]: https://github.com/vorzela/vorm/compare/v0.2.10...HEAD
+[Unreleased]: https://github.com/vorzela/vorm/compare/v0.2.11...HEAD
+[0.2.11]: https://github.com/vorzela/vorm/compare/v0.2.10...v0.2.11
 [0.2.10]: https://github.com/vorzela/vorm/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/vorzela/vorm/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/vorzela/vorm/compare/v0.2.7...v0.2.8

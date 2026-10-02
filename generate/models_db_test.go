@@ -230,6 +230,14 @@ func TestModelsFromSchemaEmitsTypedStructs(t *testing.T) {
 	if strings.Contains(src, "SELECT *") {
 		t.Error("generated models must never mention SELECT *")
 	}
+
+	post := readGenerated(t, dir, "post_gen.go")
+	if !strings.Contains(post, `"encoding/json"`) {
+		t.Fatalf("jsonb column must import encoding/json:\n%s", post)
+	}
+	if !strings.Contains(post, "json.RawMessage") {
+		t.Fatalf("jsonb column must be json.RawMessage:\n%s", post)
+	}
 }
 
 func TestModelsFromSchemaEmitsEnums(t *testing.T) {

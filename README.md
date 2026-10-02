@@ -47,7 +47,8 @@ func Up(s *schema.Facade) {
 	s.Create("posts", func(t *schema.Blueprint) {
 		t.ID()
 		t.String("title")
-		t.Timestamps()
+		t.Jsonb("meta")
+		t.Timestamps() // TIMESTAMPTZ on Postgres
 	})
 }
 
@@ -55,6 +56,10 @@ func Down(s *schema.Facade) {
 	s.DropIfExists("posts")
 }
 ```
+
+Built-in column helpers cover `Jsonb`, `TimestampTz`, `Decimal`, `Inet`, and more.
+Extension types (`citext`, PostGIS) use `t.CustomType("…").Column("…")` after
+`CREATE EXTENSION` (see `migrations/extensions.sql`).
 
 `vorm migrate` lints first (`--no-lint` to skip), takes a lock so two deploys
 cannot race, runs each file in a transaction where the dialect allows it, and

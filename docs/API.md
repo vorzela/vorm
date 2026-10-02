@@ -630,14 +630,19 @@ func Down(s *schema.Facade) {
 | `UUID(name)` | Postgres `UUID DEFAULT gen_random_uuid()`; MariaDB `UUID DEFAULT UUID_v4()`; MySQL `CHAR(36)` |
 | `String(name, length...)` | `VARCHAR(255)` default |
 | `Text(name)` | `TEXT NULL` |
-| `Boolean` / `Integer` / `BigInteger` | NOT NULL |
+| `Boolean` / `Integer` / `BigInteger` / `SmallInteger` | NOT NULL |
+| `Float` / `Double` / `Decimal(name, p, s)` | REAL/DOUBLE PRECISION/NUMERIC (dialect-aware) |
+| `Timestamp` / `TimestampTz` / `Date` / `DateTime` / `Time` | time columns (Pg `TimestampTz` → `TIMESTAMPTZ`) |
+| `Json` / `Jsonb` | Postgres `JSONB` / MySQL `JSON` (nullable) |
+| `Binary` / `Bytea` | Postgres `BYTEA` / MySQL `BLOB` |
+| `Inet` | Postgres `INET` / MySQL `VARCHAR(45)` |
 | `ForeignID` / `ForeignId` | `BIGINT NOT NULL` |
 | `ForeignIDNullable` | nullable FK |
 | `BelongsTo(col, table)` | constrained FK, cascade delete |
 | `Morphs(name)` | `{name}_type` + `{name}_id` + index |
-| `CustomType(sqlType).Column(name)` | extension or dialect type, written through unchanged |
+| `CustomType(sqlType).Column(name)` | extension or dialect type (`citext`, PostGIS, …), written through unchanged |
 | `Enum(col, values...)` | PG type / MySQL ENUM |
-| `Timestamps()` | `created_at`, `updated_at` |
+| `Timestamps()` / `TimestampsTz()` | `created_at`, `updated_at` (`TIMESTAMPTZ` on Postgres) |
 | `SoftDeletes()` | `deleted_at` + index |
 | `Index` / `Unique` | indexes |
 | `DropColumn` / `DropIndex` | alter down |

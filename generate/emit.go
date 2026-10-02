@@ -95,10 +95,11 @@ func detectQueryImports(opts *Options, body string) map[string]bool {
 		modelPkg = DefaultModelPkg
 	}
 	for pkg, used := range map[string]bool{
-		`"fmt"`:          strings.Contains(body, "fmt."),
-		`"strings"`:      strings.Contains(body, "strings."),
-		`"time"`:         strings.Contains(body, "time."),
-		`"database/sql"`: strings.Contains(body, "sql.NullFloat64"),
+		`"fmt"`:           strings.Contains(body, "fmt."),
+		`"strings"`:       strings.Contains(body, "strings."),
+		`"time"`:          strings.Contains(body, "time."),
+		`"encoding/json"`: strings.Contains(body, "json."),
+		`"database/sql"`:  strings.Contains(body, "sql.NullFloat64"),
 		// Row structs reference generated enums (models.UserStatus).
 		strconv.Quote(opts.ModelImport): opts.ModelImport != "" && strings.Contains(body, modelPkg+"."),
 	} {
@@ -116,8 +117,8 @@ func writeImports(b *strings.Builder, imports map[string]bool) {
 	// explicit set beats guessing from the path shape (a module named
 	// "vorme2e/models" has no dot to give it away).
 	stdlib := map[string]bool{
-		"context": true, "database/sql": true, "errors": true, "fmt": true,
-		"strings": true, "time": true,
+		"context": true, "database/sql": true, "encoding/json": true,
+		"errors": true, "fmt": true, "strings": true, "time": true,
 	}
 	var std, ext []string
 	for imp := range imports {

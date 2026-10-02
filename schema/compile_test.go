@@ -188,6 +188,81 @@ func Down(s *schema.Facade) { s.DropIfExists("places") }
 	}
 }
 
+func TestCompileSourcePostgresColumnHelpers(t *testing.T) {
+	src := `package migrations
+import "github.com/vorzela/vorm/schema"
+func Up(s *schema.Facade) {
+	s.Create("widgets", func(t *schema.Blueprint) {
+		t.ID()
+		t.Timestamp("published_at")
+		t.TimestampTz("event_at")
+		t.Date("born_on")
+		t.DateTime("scheduled_at")
+		t.Time("opens_at")
+		t.Json("meta")
+		t.Jsonb("payload")
+		t.Float("score")
+		t.Double("amount")
+		t.Decimal("price", 10, 2)
+		t.SmallInteger("rank")
+		t.Binary("blob")
+		t.Bytea("raw")
+		t.Inet("ip")
+		t.TimestampsTz()
+	})
+}
+func Down(s *schema.Facade) { s.DropIfExists("widgets") }
+`
+	pg, err := schema.CompileSource("widgets.go", src, "postgres")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"published_at TIMESTAMP NOT NULL",
+		"event_at TIMESTAMPTZ NOT NULL",
+		"born_on DATE NOT NULL",
+		"scheduled_at TIMESTAMP NOT NULL",
+		"opens_at TIME NOT NULL",
+		"meta JSONB NULL",
+		"payload JSONB NULL",
+		"score REAL NOT NULL",
+		"amount DOUBLE PRECISION NOT NULL",
+		"price NUMERIC(10,2) NOT NULL",
+		"rank SMALLINT NOT NULL",
+		"blob BYTEA NOT NULL",
+		"raw BYTEA NOT NULL",
+		"ip INET NOT NULL",
+		"created_at TIMESTAMPTZ",
+	} {
+		if !strings.Contains(pg.UpSQL, want) {
+			t.Errorf("postgres Up missing %q\n%s", want, pg.UpSQL)
+		}
+	}
+
+	mysql, err := schema.CompileSource("widgets.go", src, "mysql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"published_at TIMESTAMP NOT NULL",
+		"event_at TIMESTAMP NOT NULL",
+		"scheduled_at DATETIME NOT NULL",
+		"meta JSON NULL",
+		"payload JSON NULL",
+		"score FLOAT NOT NULL",
+		"amount DOUBLE NOT NULL",
+		"price DECIMAL(10,2) NOT NULL",
+		"blob BLOB NOT NULL",
+		"raw BLOB NOT NULL",
+		"ip VARCHAR(45) NOT NULL",
+		"created_at TIMESTAMP",
+	} {
+		if !strings.Contains(mysql.UpSQL, want) {
+			t.Errorf("mysql Up missing %q\n%s", want, mysql.UpSQL)
+		}
+	}
+}
+
 func TestCompileSourceCustomTypeRejects(t *testing.T) {
 	missing := `package migrations
 import "github.com/vorzela/vorm/schema"
