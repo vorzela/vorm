@@ -878,10 +878,10 @@ func lowerCallChain(call *ast.CallExpr, st *StubFunc, models map[string]ModelSpe
 	case "Pluck":
 		st.Action = "Pluck"
 		if len(call.Args) >= 3 {
-			if col, ok := litString(call.Args[2]); ok {
+			if col, ok := resolveColumnKey(call.Args[2], models); ok {
 				st.Selects = []string{col}
 			} else {
-				st.PendingWhy = "Pluck needs a literal column"
+				st.PendingWhy = "Pluck needs a column name or Users.Col.X"
 				return false
 			}
 		}
@@ -889,10 +889,10 @@ func lowerCallChain(call *ast.CallExpr, st *StubFunc, models map[string]ModelSpe
 	case "Sum", "Avg", "Min", "Max":
 		st.Action = action
 		if len(call.Args) >= 3 {
-			if col, ok := litString(call.Args[2]); ok {
+			if col, ok := resolveColumnKey(call.Args[2], models); ok {
 				st.Selects = []string{col}
 			} else {
-				st.PendingWhy = action + " needs a literal column"
+				st.PendingWhy = action + " needs a column name or Users.Col.X"
 				return false
 			}
 		}
@@ -900,10 +900,10 @@ func lowerCallChain(call *ast.CallExpr, st *StubFunc, models map[string]ModelSpe
 	case "Increment", "Decrement":
 		st.Action = action
 		if len(call.Args) >= 3 {
-			if col, ok := litString(call.Args[2]); ok {
+			if col, ok := resolveColumnKey(call.Args[2], models); ok {
 				st.Selects = []string{col}
 			} else {
-				st.PendingWhy = action + " needs a literal column"
+				st.PendingWhy = action + " needs a column name or Users.Col.X"
 				return false
 			}
 			if len(call.Args) >= 4 {
@@ -1096,7 +1096,7 @@ func lowerBuilderChain(x ast.Expr, st *StubFunc, models map[string]ModelSpec) bo
 		if !ok {
 			return false
 		}
-		if !lowerBuilderCall(sel.Sel.Name, n, st) {
+		if !lowerBuilderCall(sel.Sel.Name, n, st, models) {
 			return false
 		}
 		return lowerBuilderChain(sel.X, st, models)
@@ -1107,16 +1107,16 @@ func lowerBuilderChain(x ast.Expr, st *StubFunc, models map[string]ModelSpec) bo
 
 // lowerBuilderCall records one chained builder method. Calls arrive from the
 // outermost inward, so clauses are prepended to keep source order.
-func lowerBuilderCall(name string, call *ast.CallExpr, st *StubFunc) bool {
+func lowerBuilderCall(name string, call *ast.CallExpr, st *StubFunc, models map[string]ModelSpec) bool {
 	args := call.Args
 	switch name {
 	case "New", "Dialect":
 		return true
 
 	case "Where", "OrWhere", "Having":
-		w, ok := parseWhereCall(args)
+		w, ok := parseWhereCall(args, models)
 		if !ok {
-			st.PendingWhy = "Where form not supported (use column, [op], value)"
+			st.PendingWhy = "Where form not supported (use column or Users.Col.X, [op], value)"
 			return false
 		}
 		if name == "OrWhere" {
@@ -1130,7 +1130,7 @@ func lowerBuilderCall(name string, call *ast.CallExpr, st *StubFunc) bool {
 		return true
 
 	case "WhereIn", "WhereNotIn":
-		w, ok := parseWhereIn(args, call.Ellipsis.IsValid(), name == "WhereNotIn")
+		w, ok := parseWhereIn(args, call.Ellipsis.IsValid(), name == "WhereNotIn", models)
 		if !ok {
 			st.PendingWhy = name + " needs a column and values"
 			return false
@@ -1142,9 +1142,9 @@ func lowerBuilderCall(name string, call *ast.CallExpr, st *StubFunc) bool {
 		if len(args) < 1 {
 			return false
 		}
-		col, ok := litString(args[0])
+		col, ok := resolveColumnKey(args[0], models)
 		if !ok {
-			st.PendingWhy = name + " needs a literal column name"
+			st.PendingWhy = name + " needs a column name or Users.Col.X"
 			return false
 		}
 		kind := WhereNull
@@ -1158,7 +1158,7 @@ func lowerBuilderCall(name string, call *ast.CallExpr, st *StubFunc) bool {
 		if len(args) != 2 {
 			return false
 		}
-		cols := litStringSlice(args[0])
+		cols := resolveColumnKeys(args[0], models)
 		if len(cols) == 0 {
 			st.PendingWhy = "WhereSearch needs a literal column list"
 			return false
@@ -1237,9 +1237,9 @@ func lowerBuilderCall(name string, call *ast.CallExpr, st *StubFunc) bool {
 			st.PendingWhy = "WhereRelation needs a literal relation name"
 			return false
 		}
-		extra, ok := parseWhereCall(args[1:])
+		extra, ok := parseWhereCall(args[1:], models)
 		if !ok {
-			st.PendingWhy = "WhereRelation predicate must be a literal column form"
+			st.PendingWhy = "WhereRelation predicate must be a column form"
 			return false
 		}
 		extra.Kind = WhereExists
@@ -1265,9 +1265,9 @@ func lowerBuilderCall(name string, call *ast.CallExpr, st *StubFunc) bool {
 		if len(args) != 2 {
 			return false
 		}
-		col, ok := litString(args[0])
+		col, ok := resolveColumnKey(args[0], models)
 		if !ok {
-			st.PendingWhy = "WhereFullText needs a literal column"
+			st.PendingWhy = "WhereFullText needs a column name or Users.Col.X"
 			return false
 		}
 		st.Wheres = prependWhere(st.Wheres, WhereSpec{Kind: WhereFTS, Col: col, ArgExpr: exprString(args[1])})
@@ -1277,9 +1277,9 @@ func lowerBuilderCall(name string, call *ast.CallExpr, st *StubFunc) bool {
 		if len(args) != 2 {
 			return false
 		}
-		col, ok := litString(args[0])
+		col, ok := resolveColumnKey(args[0], models)
 		if !ok {
-			st.PendingWhy = "WhereJsonContains needs a literal column"
+			st.PendingWhy = "WhereJsonContains needs a column name or Users.Col.X"
 			return false
 		}
 		st.Wheres = prependWhere(st.Wheres, WhereSpec{Kind: WhereJSON, Col: col, ArgExpr: exprString(args[1])})
@@ -1289,9 +1289,9 @@ func lowerBuilderCall(name string, call *ast.CallExpr, st *StubFunc) bool {
 		if len(args) < 1 {
 			return false
 		}
-		col, ok := litString(args[0])
+		col, ok := resolveColumnKey(args[0], models)
 		if !ok {
-			st.PendingWhy = "OrderBy needs a literal column name"
+			st.PendingWhy = "OrderBy needs a column name or Users.Col.X"
 			return false
 		}
 		dir := "ASC"
@@ -1308,9 +1308,9 @@ func lowerBuilderCall(name string, call *ast.CallExpr, st *StubFunc) bool {
 	case "GroupBy":
 		var cols []string
 		for _, a := range args {
-			c, ok := litString(a)
+			c, ok := resolveColumnKey(a, models)
 			if !ok {
-				st.PendingWhy = "GroupBy needs literal column names"
+				st.PendingWhy = "GroupBy needs column names or Users.Col.X"
 				return false
 			}
 			cols = append(cols, c)
@@ -1361,9 +1361,9 @@ func lowerBuilderCall(name string, call *ast.CallExpr, st *StubFunc) bool {
 
 	case "Select":
 		for _, a := range args {
-			s, ok := litString(a)
+			s, ok := resolveColumnKey(a, models)
 			if !ok {
-				st.PendingWhy = "Select needs literal column names"
+				st.PendingWhy = "Select needs column names or Users.Col.X"
 				return false
 			}
 			st.Selects = append(st.Selects, s)
@@ -1377,9 +1377,9 @@ func lowerBuilderCall(name string, call *ast.CallExpr, st *StubFunc) bool {
 	case "DistinctOn":
 		st.Distinct = true
 		for _, a := range args {
-			s, ok := litString(a)
+			s, ok := resolveColumnKey(a, models)
 			if !ok {
-				st.PendingWhy = "DistinctOn needs literal column names"
+				st.PendingWhy = "DistinctOn needs column names or Users.Col.X"
 				return false
 			}
 			st.DistinctOn = append(st.DistinctOn, s)
@@ -1424,11 +1424,11 @@ func prependWhere(list []WhereSpec, w WhereSpec) []WhereSpec {
 
 // parseWhereIn handles WhereIn("col", a, b) and WhereIn("col", ids...). The
 // spread form has a runtime length, so it compiles to a dynamic IN group.
-func parseWhereIn(args []ast.Expr, spread, negated bool) (WhereSpec, bool) {
+func parseWhereIn(args []ast.Expr, spread, negated bool, models map[string]ModelSpec) (WhereSpec, bool) {
 	if len(args) < 2 {
 		return WhereSpec{}, false
 	}
-	col, ok := litString(args[0])
+	col, ok := resolveColumnKey(args[0], models)
 	if !ok {
 		return WhereSpec{}, false
 	}
@@ -1449,9 +1449,9 @@ func parseInValues(col string, vals []ast.Expr, spread, negated bool) (WhereSpec
 	return w, true
 }
 
-func parseWhereCall(args []ast.Expr) (WhereSpec, bool) {
+func parseWhereCall(args []ast.Expr, models map[string]ModelSpec) (WhereSpec, bool) {
 	if len(args) == 2 {
-		col, ok := litString(args[0])
+		col, ok := resolveColumnKey(args[0], models)
 		if !ok {
 			return WhereSpec{}, false
 		}
@@ -1461,7 +1461,7 @@ func parseWhereCall(args []ast.Expr) (WhereSpec, bool) {
 		return WhereSpec{Col: col, Op: "=", ArgExpr: exprString(args[1])}, true
 	}
 	if len(args) == 3 {
-		col, ok := litString(args[0])
+		col, ok := resolveColumnKey(args[0], models)
 		if !ok {
 			return WhereSpec{}, false
 		}
@@ -1554,6 +1554,30 @@ func resolveColumnKey(e ast.Expr, models map[string]ModelSpec) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// resolveColumnKeys resolves a []string{"a","b"} literal or a list of Col
+// selectors into database column names.
+func resolveColumnKeys(e ast.Expr, models map[string]ModelSpec) []string {
+	if cols := litStringSlice(e); len(cols) > 0 {
+		return cols
+	}
+	cl, ok := e.(*ast.CompositeLit)
+	if !ok {
+		if col, ok := resolveColumnKey(e, models); ok {
+			return []string{col}
+		}
+		return nil
+	}
+	var out []string
+	for _, elt := range cl.Elts {
+		col, ok := resolveColumnKey(elt, models)
+		if !ok {
+			return nil
+		}
+		out = append(out, col)
+	}
+	return out
 }
 
 // --- AST helpers ---
