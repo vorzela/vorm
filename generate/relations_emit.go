@@ -68,7 +68,7 @@ func renderTableRelations(t introspect.Table, tables []introspect.Table, plans [
 				continue
 			}
 			fmt.Fprintf(&b, "\t\treturn query.LoadBelongsTo(ctx, db, rows, query.BelongsTo[%s, %s]{\n", owner, related)
-			fmt.Fprintf(&b, "\t\t\tRelated:   %s,\n", EntityName(p.RelatedTable))
+			fmt.Fprintf(&b, "\t\t\tRelated:   %s.Entity,\n", EntityName(p.RelatedTable))
 			fmt.Fprintf(&b, "\t\t\tOwnerKey:  %q,\n", p.ForeignKey)
 			fmt.Fprintf(&b, "\t\t\tParentKey: func(m *%s) any { return m.%s },\n", owner, ownerField)
 			fmt.Fprintf(&b, "\t\t\tChildKey:  func(r *%s) any { return r.%s },\n", related, relatedField)
@@ -82,7 +82,7 @@ func renderTableRelations(t introspect.Table, tables []introspect.Table, plans [
 				continue
 			}
 			fmt.Fprintf(&b, "\t\treturn query.LoadHasMany(ctx, db, rows, query.HasMany[%s, %s]{\n", owner, related)
-			fmt.Fprintf(&b, "\t\t\tRelated:    %s,\n", EntityName(p.RelatedTable))
+			fmt.Fprintf(&b, "\t\t\tRelated:   %s.Entity,\n", EntityName(p.RelatedTable))
 			fmt.Fprintf(&b, "\t\t\tForeignKey: %q,\n", p.ForeignKey)
 			fmt.Fprintf(&b, "\t\t\tParentKey:  func(m *%s) any { return m.%s },\n", owner, ownerField)
 			fmt.Fprintf(&b, "\t\t\tChildKey:   func(r *%s) any { return r.%s },\n", related, relatedField)
@@ -99,7 +99,7 @@ func renderTableRelations(t introspect.Table, tables []introspect.Table, plans [
 				continue
 			}
 			fmt.Fprintf(&b, "\t\treturn query.LoadHasMany(ctx, db, rows, query.HasMany[%s, %s]{\n", owner, related)
-			fmt.Fprintf(&b, "\t\t\tRelated:    %s,\n", EntityName(p.RelatedTable))
+			fmt.Fprintf(&b, "\t\t\tRelated:   %s.Entity,\n", EntityName(p.RelatedTable))
 			fmt.Fprintf(&b, "\t\t\tForeignKey: %q,\n", p.ForeignKey)
 			fmt.Fprintf(&b, "\t\t\tParentKey:  func(m *%s) any { return m.%s },\n", owner, ownerField)
 			fmt.Fprintf(&b, "\t\t\tChildKey:   func(r *%s) any { return r.%s },\n", related, relatedField)
@@ -113,7 +113,7 @@ func renderTableRelations(t introspect.Table, tables []introspect.Table, plans [
 				continue
 			}
 			fmt.Fprintf(&b, "\t\treturn query.LoadBelongsToMany(ctx, db, rows, query.BelongsToMany[%s, %s]{\n", owner, related)
-			fmt.Fprintf(&b, "\t\t\tRelated:         %s,\n", EntityName(p.RelatedTable))
+			fmt.Fprintf(&b, "\t\t\tRelated:   %s.Entity,\n", EntityName(p.RelatedTable))
 			fmt.Fprintf(&b, "\t\t\tPivotTable:      %q,\n", p.Pivot)
 			fmt.Fprintf(&b, "\t\t\tPivotParentKey:  %q,\n", p.PivotOwnerKey)
 			fmt.Fprintf(&b, "\t\t\tPivotRelatedKey: %q,\n", p.PivotRelatedKey)
@@ -159,7 +159,7 @@ func renderTableRelations(t introspect.Table, tables []introspect.Table, plans [
 				continue
 			}
 			fmt.Fprintf(&b, "\t\treturn query.LoadHasMany(ctx, db, rows, query.HasMany[%s, %s]{\n", owner, related)
-			fmt.Fprintf(&b, "\t\t\tRelated:    %s,\n", EntityName(p.RelatedTable))
+			fmt.Fprintf(&b, "\t\t\tRelated:   %s.Entity,\n", EntityName(p.RelatedTable))
 			fmt.Fprintf(&b, "\t\t\tForeignKey: %q,\n", p.ForeignKey)
 			fmt.Fprintf(&b, "\t\t\tParentKey:  func(m *%s) any { return m.%s },\n", owner, ownerField)
 			fmt.Fprintf(&b, "\t\t\tChildKey:   func(r *%s) any { return r.%s },\n", related, relatedField)
@@ -171,7 +171,7 @@ func renderTableRelations(t introspect.Table, tables []introspect.Table, plans [
 
 		case query.RelationHasManyThrough:
 			fmt.Fprintf(&b, "\t\treturn query.LoadHasManyThrough(ctx, db, rows, query.HasManyThrough[%s, %s]{\n", owner, related)
-			fmt.Fprintf(&b, "\t\t\tRelated:      %s,\n", EntityName(p.RelatedTable))
+			fmt.Fprintf(&b, "\t\t\tRelated:   %s.Entity,\n", EntityName(p.RelatedTable))
 			fmt.Fprintf(&b, "\t\t\tThroughTable: %q,\n", p.Pivot)
 			fmt.Fprintf(&b, "\t\t\tThroughLocal: %q,\n", p.PivotOwnerKey)
 			fmt.Fprintf(&b, "\t\t\tThroughFar:   %q,\n", p.PivotRelatedKey)
@@ -187,7 +187,7 @@ func renderTableRelations(t introspect.Table, tables []introspect.Table, plans [
 				continue
 			}
 			fmt.Fprintf(&b, "\t\treturn query.LoadHasOneOfMany(ctx, db, rows, query.HasOneOfMany[%s, %s]{\n", owner, related)
-			fmt.Fprintf(&b, "\t\t\tRelated:    %s,\n", EntityName(p.RelatedTable))
+			fmt.Fprintf(&b, "\t\t\tRelated:   %s.Entity,\n", EntityName(p.RelatedTable))
 			fmt.Fprintf(&b, "\t\t\tForeignKey: %q,\n", p.ForeignKey)
 			fmt.Fprintf(&b, "\t\t\tOrderCol:   %q,\n", p.OrderCol)
 			fmt.Fprintf(&b, "\t\t\tDesc:       %t,\n", p.OfManyDesc)
@@ -203,7 +203,7 @@ func renderTableRelations(t introspect.Table, tables []introspect.Table, plans [
 				continue
 			}
 			fmt.Fprintf(&b, "\t\treturn query.LoadBelongsToMany(ctx, db, rows, query.BelongsToMany[%s, %s]{\n", owner, related)
-			fmt.Fprintf(&b, "\t\t\tRelated:         %s,\n", EntityName(p.RelatedTable))
+			fmt.Fprintf(&b, "\t\t\tRelated:   %s.Entity,\n", EntityName(p.RelatedTable))
 			fmt.Fprintf(&b, "\t\t\tPivotTable:      %q,\n", p.Pivot)
 			fmt.Fprintf(&b, "\t\t\tPivotParentKey:  %q,\n", p.PivotOwnerKey)
 			fmt.Fprintf(&b, "\t\t\tPivotRelatedKey: %q,\n", p.PivotRelatedKey)

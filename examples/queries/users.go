@@ -200,7 +200,7 @@ func LockUserForUpdate(ctx context.Context, db query.DB, id int64) (*User, error
 //
 // vorm:query name=CreateUser
 func CreateUser(ctx context.Context, db query.DB, email, name string, age int) (int64, error) {
-	return Users.Create(ctx, db, map[string]any{
+	return Users.Create(ctx, db, map[query.Col]any{
 		"email":  email,
 		"name":   name,
 		"active": true,
@@ -212,7 +212,7 @@ func CreateUser(ctx context.Context, db query.DB, email, name string, age int) (
 //
 // vorm:query name=DeactivateUser
 func DeactivateUser(ctx context.Context, db query.DB, id int64) (int64, error) {
-	return Users.Where("id", id).Update(ctx, db, map[string]any{"active": false})
+	return Users.Where("id", id).Update(ctx, db, map[query.Col]any{"active": false})
 }
 
 // SoftDeleteUser — soft delete (Meta.SoftDeletes).
@@ -248,7 +248,7 @@ func ActivateUsersInTx(ctx context.Context, db query.Beginner, ids ...any) error
 			return err
 		}
 		for _, u := range users {
-			if _, err := Users.Where("id", u.ID).Update(ctx, tx, map[string]any{"active": true}); err != nil {
+			if _, err := Users.Where("id", u.ID).Update(ctx, tx, map[query.Col]any{"active": true}); err != nil {
 				return err
 			}
 		}

@@ -23,10 +23,13 @@ type Tag struct {
 // TagTable is the table name for Tag.
 const TagTable = "tags"
 
+// TagsCol is the typed column key for "tags" — use as map[TagsCol]any.
+type TagsCol = query.Col
+
 // TagColumns gives compile-time-checked column names.
 var TagColumns = struct {
-	ID   string
-	Name string
+	ID   TagsCol
+	Name TagsCol
 }{
 	ID:   "id",
 	Name: "name",
@@ -36,12 +39,22 @@ var TagColumns = struct {
 var TagColumnList = []string{"id", "name"}
 
 // Tags is the typed query entrypoint for "tags".
-var Tags = query.Model[Tag](query.Meta{
-	Table:       TagTable,
-	Columns:     TagColumnList,
-	PrimaryKey:  "id",
-	SoftDeletes: false,
-})
+// Methods are promoted from *query.Entity; use Tags.Col.<Field> as map[TagsCol]any keys.
+var Tags = struct {
+	*query.Entity[Tag]
+	Col struct {
+		ID   TagsCol
+		Name TagsCol
+	}
+}{
+	Entity: query.Model[Tag](query.Meta{
+		Table:       TagTable,
+		Columns:     TagColumnList,
+		PrimaryKey:  "id",
+		SoftDeletes: false,
+	}),
+	Col: TagColumns,
+}
 
 // Relations are registered on package init so .With("name") resolves without
 // extra wiring. Every loader batches the whole result set into a bounded
@@ -53,7 +66,7 @@ func init() {
 		PivotTable: "post_tags", PivotLocalKey: "tag_id", PivotForeignKey: "post_id",
 	}, func(ctx context.Context, db query.DB, rows []*Tag) error {
 		return query.LoadBelongsToMany(ctx, db, rows, query.BelongsToMany[Tag, Post]{
-			Related:         Posts,
+			Related:         Posts.Entity,
 			PivotTable:      "post_tags",
 			PivotParentKey:  "tag_id",
 			PivotRelatedKey: "post_id",

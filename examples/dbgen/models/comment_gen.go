@@ -24,12 +24,15 @@ type Comment struct {
 // CommentTable is the table name for Comment.
 const CommentTable = "comments"
 
+// CommentsCol is the typed column key for "comments" — use as map[CommentsCol]any.
+type CommentsCol = query.Col
+
 // CommentColumns gives compile-time-checked column names.
 var CommentColumns = struct {
-	ID        string
-	PostID    string
-	Body      string
-	CreatedAt string
+	ID        CommentsCol
+	PostID    CommentsCol
+	Body      CommentsCol
+	CreatedAt CommentsCol
 }{
 	ID:        "id",
 	PostID:    "post_id",
@@ -41,13 +44,25 @@ var CommentColumns = struct {
 var CommentColumnList = []string{"id", "post_id", "body", "created_at"}
 
 // Comments is the typed query entrypoint for "comments".
-var Comments = query.Model[Comment](query.Meta{
-	Table:       CommentTable,
-	Columns:     CommentColumnList,
-	PrimaryKey:  "id",
-	SoftDeletes: false,
-	Indexes:     CommentIndexes,
-})
+// Methods are promoted from *query.Entity; use Comments.Col.<Field> as map[CommentsCol]any keys.
+var Comments = struct {
+	*query.Entity[Comment]
+	Col struct {
+		ID        CommentsCol
+		PostID    CommentsCol
+		Body      CommentsCol
+		CreatedAt CommentsCol
+	}
+}{
+	Entity: query.Model[Comment](query.Meta{
+		Table:       CommentTable,
+		Columns:     CommentColumnList,
+		PrimaryKey:  "id",
+		SoftDeletes: false,
+		Indexes:     CommentIndexes,
+	}),
+	Col: CommentColumns,
+}
 
 // CommentIndexes mirrors the indexes that exist on "comments".
 var CommentIndexes = []query.IndexInfo{
@@ -64,7 +79,7 @@ func init() {
 		LocalKey: "post_id", ForeignKey: "id",
 	}, func(ctx context.Context, db query.DB, rows []*Comment) error {
 		return query.LoadBelongsTo(ctx, db, rows, query.BelongsTo[Comment, Post]{
-			Related:   Posts,
+			Related:   Posts.Entity,
 			OwnerKey:  "id",
 			ParentKey: func(m *Comment) any { return m.PostID },
 			ChildKey:  func(r *Post) any { return r.ID },

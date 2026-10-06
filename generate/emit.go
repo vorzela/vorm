@@ -433,6 +433,10 @@ func emitCreateBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Diale
 		fmt.Fprintf(b, "\treturn 0, fmt.Errorf(%q)\n", "vorm/gen: missing model for Create")
 		return
 	}
+	if len(st.CreateVals) == 0 {
+		fmt.Fprintf(b, "\treturn 0, fmt.Errorf(%q)\n", "vorm/gen: Create has no columns — use a literal map[Col]any{ Users.Col.X: value, ... }")
+		return
+	}
 	cols := make([]string, len(st.CreateVals))
 	exprs := make([]string, len(st.CreateVals))
 	for i, kv := range st.CreateVals {

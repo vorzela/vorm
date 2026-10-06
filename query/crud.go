@@ -18,13 +18,13 @@ func (e *Entity[T]) FindByID(ctx context.Context, db DB, id any) (*T, error) {
 	return e.New().Where(e.meta.PrimaryKey, id).First(ctx, db)
 }
 
-// Create inserts values.
-func (e *Entity[T]) Create(ctx context.Context, db DB, values map[string]any) (int64, error) {
+// Create inserts values. Keys should be generated Cols (e.g. models.Users.Col.Email).
+func (e *Entity[T]) Create(ctx context.Context, db DB, values map[Col]any) (int64, error) {
 	return e.New().Create(ctx, db, values)
 }
 
 // Update applies values with no WHERE — prefer Users.Where(...).Update(...).
-func (e *Entity[T]) Update(ctx context.Context, db DB, values map[string]any) (int64, error) {
+func (e *Entity[T]) Update(ctx context.Context, db DB, values map[Col]any) (int64, error) {
 	return e.New().Update(ctx, db, values)
 }
 
@@ -109,14 +109,14 @@ func (e *Entity[T]) Decrement(ctx context.Context, db DB, col string, amount ...
 }
 
 // Upsert inserts rows, updating updateCols on unique conflict.
-func (e *Entity[T]) Upsert(ctx context.Context, db DB, rows []map[string]any, uniqueCols, updateCols []string) (int64, error) {
+func (e *Entity[T]) Upsert(ctx context.Context, db DB, rows []map[Col]any, uniqueCols, updateCols []string) (int64, error) {
 	return e.New().Upsert(ctx, db, rows, uniqueCols, updateCols)
 }
 
 // FirstOrCreate finds by attrs or inserts attrs merged with values.
 // Runtime builder only (not lowered to vorm/gen); recovers from a concurrent
 // unique violation by re-selecting when a unique index is present.
-func (e *Entity[T]) FirstOrCreate(ctx context.Context, db DB, attrs map[string]any, values ...map[string]any) (*T, error) {
+func (e *Entity[T]) FirstOrCreate(ctx context.Context, db DB, attrs map[Col]any, values ...map[Col]any) (*T, error) {
 	return e.New().FirstOrCreate(ctx, db, attrs, values...)
 }
 
@@ -124,6 +124,6 @@ func (e *Entity[T]) FirstOrCreate(ctx context.Context, db DB, attrs map[string]a
 // Runtime builder only (not lowered to vorm/gen); recovers from a concurrent
 // unique violation by re-selecting then updating. Prefer Upsert when the
 // conflict target is known.
-func (e *Entity[T]) UpdateOrCreate(ctx context.Context, db DB, attrs, values map[string]any) (*T, error) {
+func (e *Entity[T]) UpdateOrCreate(ctx context.Context, db DB, attrs, values map[Col]any) (*T, error) {
 	return e.New().UpdateOrCreate(ctx, db, attrs, values)
 }

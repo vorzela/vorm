@@ -22,11 +22,14 @@ type Profile struct {
 // ProfileTable is the table name for Profile.
 const ProfileTable = "profiles"
 
+// ProfilesCol is the typed column key for "profiles" — use as map[ProfilesCol]any.
+type ProfilesCol = query.Col
+
 // ProfileColumns gives compile-time-checked column names.
 var ProfileColumns = struct {
-	ID     string
-	UserID string
-	Bio    string
+	ID     ProfilesCol
+	UserID ProfilesCol
+	Bio    ProfilesCol
 }{
 	ID:     "id",
 	UserID: "user_id",
@@ -37,13 +40,24 @@ var ProfileColumns = struct {
 var ProfileColumnList = []string{"id", "user_id", "bio"}
 
 // Profiles is the typed query entrypoint for "profiles".
-var Profiles = query.Model[Profile](query.Meta{
-	Table:       ProfileTable,
-	Columns:     ProfileColumnList,
-	PrimaryKey:  "id",
-	SoftDeletes: false,
-	Indexes:     ProfileIndexes,
-})
+// Methods are promoted from *query.Entity; use Profiles.Col.<Field> as map[ProfilesCol]any keys.
+var Profiles = struct {
+	*query.Entity[Profile]
+	Col struct {
+		ID     ProfilesCol
+		UserID ProfilesCol
+		Bio    ProfilesCol
+	}
+}{
+	Entity: query.Model[Profile](query.Meta{
+		Table:       ProfileTable,
+		Columns:     ProfileColumnList,
+		PrimaryKey:  "id",
+		SoftDeletes: false,
+		Indexes:     ProfileIndexes,
+	}),
+	Col: ProfileColumns,
+}
 
 // ProfileIndexes mirrors the indexes that exist on "profiles".
 var ProfileIndexes = []query.IndexInfo{
@@ -59,7 +73,7 @@ func init() {
 		LocalKey: "user_id", ForeignKey: "id",
 	}, func(ctx context.Context, db query.DB, rows []*Profile) error {
 		return query.LoadBelongsTo(ctx, db, rows, query.BelongsTo[Profile, User]{
-			Related:   Users,
+			Related:   Users.Entity,
 			OwnerKey:  "id",
 			ParentKey: func(m *Profile) any { return m.UserID },
 			ChildKey:  func(r *User) any { return r.ID },

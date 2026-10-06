@@ -55,8 +55,12 @@ func (b *Builder[T]) addToColumn(ctx context.Context, db DB, col string, delta i
 
 // Upsert inserts rows, updating updateCols on unique conflict.
 //
-//	Users.Upsert(ctx, db, []map[string]any{{"email": e, "name": n}}, []string{"email"}, []string{"name"})
-func (b *Builder[T]) Upsert(ctx context.Context, db DB, rows []map[string]any, uniqueCols, updateCols []string) (int64, error) {
+//	Users.Upsert(ctx, db, []map[Col]any{{"email": e, "name": n}}, []string{"email"}, []string{"name"})
+func (b *Builder[T]) Upsert(ctx context.Context, db DB, rows []map[Col]any, uniqueCols, updateCols []string) (int64, error) {
+	return b.upsertStrings(ctx, db, stringMaps(rows), uniqueCols, updateCols)
+}
+
+func (b *Builder[T]) upsertStrings(ctx context.Context, db DB, rows []map[string]any, uniqueCols, updateCols []string) (int64, error) {
 	if len(rows) == 0 {
 		return 0, nil
 	}
@@ -174,20 +178,21 @@ func quoteIdentList(d Dialect, cols []string) ([]string, error) {
 // Runtime builder only (not lowered to vorm/gen). Requires a unique index on
 // the attrs columns (enforced here and by vorm generate). Under concurrency a
 // racing insert surfaces as a unique violation and FirstOrCreate re-selects.
-func (b *Builder[T]) FirstOrCreate(ctx context.Context, db DB, attrs map[string]any, values ...map[string]any) (*T, error) {
-	keys := sortedKeys(attrs)
+func (b *Builder[T]) FirstOrCreate(ctx context.Context, db DB, attrs map[Col]any, values ...map[Col]any) (*T, error) {
+	attrStr := stringMap(attrs)
+	keys := sortedKeys(attrStr)
 	if err := b.meta.RequireUniqueLookup(keys); err != nil {
 		return nil, validationErr("insert", b.meta.Table, "%s", err.Error())
 	}
 	find := b.clone()
 	for _, k := range keys {
-		find.Where(k, attrs[k])
+		find.Where(k, attrStr[k])
 	}
 	row, err := find.First(ctx, db)
 	if err != nil || row != nil {
 		return row, err
 	}
-	merged := map[string]any{}
+	merged := map[Col]any{}
 	for k, v := range attrs {
 		merged[k] = v
 	}
@@ -211,21 +216,22 @@ func (b *Builder[T]) FirstOrCreate(ctx context.Context, db DB, attrs map[string]
 // the attrs columns (enforced here and by vorm generate). Under concurrency a
 // racing insert surfaces as a unique violation and UpdateOrCreate re-selects
 // then updates. Prefer Upsert when you already know the conflict target.
-func (b *Builder[T]) UpdateOrCreate(ctx context.Context, db DB, attrs, values map[string]any) (*T, error) {
-	keys := sortedKeys(attrs)
+func (b *Builder[T]) UpdateOrCreate(ctx context.Context, db DB, attrs, values map[Col]any) (*T, error) {
+	attrStr := stringMap(attrs)
+	keys := sortedKeys(attrStr)
 	if err := b.meta.RequireUniqueLookup(keys); err != nil {
 		return nil, validationErr("update", b.meta.Table, "%s", err.Error())
 	}
 	find := b.clone()
 	for _, k := range keys {
-		find.Where(k, attrs[k])
+		find.Where(k, attrStr[k])
 	}
 	row, err := find.First(ctx, db)
 	if err != nil {
 		return nil, err
 	}
 	if row == nil {
-		merged := map[string]any{}
+		merged := map[Col]any{}
 		for k, v := range attrs {
 			merged[k] = v
 		}

@@ -282,25 +282,42 @@ func renderModel(opts SchemaOptions, mapper *TypeMapper, t introspect.Table, tab
 
 	fmt.Fprintf(&b, "// %sTable is the table name for %s.\nconst %sTable = %q\n\n", model, model, model, t.Name)
 
+	fmt.Fprintf(&b, "// %sCol is the typed column key for %q — use as map[%sCol]any.\n", entity, t.Name, entity)
+	fmt.Fprintf(&b, "type %sCol = query.Col\n\n", entity)
+
+	// Rebuild column struct fields as typed Cols (UsersCol), not plain string.
+	var typedConsts strings.Builder
+	for _, c := range t.Columns {
+		field := fields[c.Name]
+		fmt.Fprintf(&typedConsts, "\t%s %sCol\n", field, entity)
+	}
+
 	fmt.Fprintf(&b, "// %sColumns gives compile-time-checked column names.\n", model)
-	fmt.Fprintf(&b, "var %sColumns = struct {\n%s}{\n%s}\n\n", model, colConsts.String(), colNames.String())
+	fmt.Fprintf(&b, "var %sColumns = struct {\n%s}{\n%s}\n\n", model, typedConsts.String(), colNames.String())
 
 	fmt.Fprintf(&b, "// %sColumnList is the explicit projection vorm selects; wildcards are never emitted.\n", model)
 	fmt.Fprintf(&b, "var %sColumnList = []string{%s}\n\n", model, quoteJoin(cols))
 
 	fmt.Fprintf(&b, "// %s is the typed query entrypoint for %q.\n", entity, t.Name)
-	fmt.Fprintf(&b, "var %s = query.Model[%s](query.Meta{\n", entity, model)
-	fmt.Fprintf(&b, "\tTable:       %sTable,\n", model)
-	fmt.Fprintf(&b, "\tColumns:     %sColumnList,\n", model)
-	fmt.Fprintf(&b, "\tPrimaryKey:  %q,\n", pk)
-	fmt.Fprintf(&b, "\tSoftDeletes: %t,\n", t.HasSoftDeletes())
+	fmt.Fprintf(&b, "// Methods are promoted from *query.Entity; use %s.Col.<Field> as map[%sCol]any keys.\n", entity, entity)
+	fmt.Fprintf(&b, "var %s = struct {\n", entity)
+	fmt.Fprintf(&b, "\t*query.Entity[%s]\n", model)
+	fmt.Fprintf(&b, "\tCol struct {\n%s\t}\n", typedConsts.String())
+	fmt.Fprintf(&b, "}{\n")
+	fmt.Fprintf(&b, "\tEntity: query.Model[%s](query.Meta{\n", model)
+	fmt.Fprintf(&b, "\t\tTable:       %sTable,\n", model)
+	fmt.Fprintf(&b, "\t\tColumns:     %sColumnList,\n", model)
+	fmt.Fprintf(&b, "\t\tPrimaryKey:  %q,\n", pk)
+	fmt.Fprintf(&b, "\t\tSoftDeletes: %t,\n", t.HasSoftDeletes())
 	if len(generated) > 0 {
-		fmt.Fprintf(&b, "\tGenerated:   []string{%s},\n", quoteJoin(generated))
+		fmt.Fprintf(&b, "\t\tGenerated:   []string{%s},\n", quoteJoin(generated))
 	}
 	if len(t.Indexes) > 0 {
-		fmt.Fprintf(&b, "\tIndexes:     %sIndexes,\n", model)
+		fmt.Fprintf(&b, "\t\tIndexes:     %sIndexes,\n", model)
 	}
-	b.WriteString("})\n")
+	fmt.Fprintf(&b, "\t}),\n")
+	fmt.Fprintf(&b, "\tCol: %sColumns,\n", model)
+	b.WriteString("}\n")
 
 	if len(t.Indexes) > 0 {
 		fmt.Fprintf(&b, "\n// %sIndexes mirrors the indexes that exist on %q.\n", model, t.Name)

@@ -70,7 +70,7 @@ func main() {
 			fatal(err)
 		}
 	case "version", "--version":
-		fmt.Println("vorm 0.2.11 (Vorzela v3)")
+		fmt.Println("vorm 0.2.12 (Vorzela v3)")
 	case "help", "--help", "-h":
 		usage()
 	default:

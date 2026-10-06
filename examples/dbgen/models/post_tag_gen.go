@@ -26,13 +26,16 @@ type PostTag struct {
 // PostTagTable is the table name for PostTag.
 const PostTagTable = "post_tags"
 
+// PostTagsCol is the typed column key for "post_tags" — use as map[PostTagsCol]any.
+type PostTagsCol = query.Col
+
 // PostTagColumns gives compile-time-checked column names.
 var PostTagColumns = struct {
-	ID        string
-	PostID    string
-	TagID     string
-	Pinned    string
-	CreatedAt string
+	ID        PostTagsCol
+	PostID    PostTagsCol
+	TagID     PostTagsCol
+	Pinned    PostTagsCol
+	CreatedAt PostTagsCol
 }{
 	ID:        "id",
 	PostID:    "post_id",
@@ -45,13 +48,26 @@ var PostTagColumns = struct {
 var PostTagColumnList = []string{"id", "post_id", "tag_id", "pinned", "created_at"}
 
 // PostTags is the typed query entrypoint for "post_tags".
-var PostTags = query.Model[PostTag](query.Meta{
-	Table:       PostTagTable,
-	Columns:     PostTagColumnList,
-	PrimaryKey:  "id",
-	SoftDeletes: false,
-	Indexes:     PostTagIndexes,
-})
+// Methods are promoted from *query.Entity; use PostTags.Col.<Field> as map[PostTagsCol]any keys.
+var PostTags = struct {
+	*query.Entity[PostTag]
+	Col struct {
+		ID        PostTagsCol
+		PostID    PostTagsCol
+		TagID     PostTagsCol
+		Pinned    PostTagsCol
+		CreatedAt PostTagsCol
+	}
+}{
+	Entity: query.Model[PostTag](query.Meta{
+		Table:       PostTagTable,
+		Columns:     PostTagColumnList,
+		PrimaryKey:  "id",
+		SoftDeletes: false,
+		Indexes:     PostTagIndexes,
+	}),
+	Col: PostTagColumns,
+}
 
 // PostTagIndexes mirrors the indexes that exist on "post_tags".
 var PostTagIndexes = []query.IndexInfo{
@@ -68,7 +84,7 @@ func init() {
 		LocalKey: "post_id", ForeignKey: "id",
 	}, func(ctx context.Context, db query.DB, rows []*PostTag) error {
 		return query.LoadBelongsTo(ctx, db, rows, query.BelongsTo[PostTag, Post]{
-			Related:   Posts,
+			Related:   Posts.Entity,
 			OwnerKey:  "id",
 			ParentKey: func(m *PostTag) any { return m.PostID },
 			ChildKey:  func(r *Post) any { return r.ID },
@@ -81,7 +97,7 @@ func init() {
 		LocalKey: "tag_id", ForeignKey: "id",
 	}, func(ctx context.Context, db query.DB, rows []*PostTag) error {
 		return query.LoadBelongsTo(ctx, db, rows, query.BelongsTo[PostTag, Tag]{
-			Related:   Tags,
+			Related:   Tags.Entity,
 			OwnerKey:  "id",
 			ParentKey: func(m *PostTag) any { return m.TagID },
 			ChildKey:  func(r *Tag) any { return r.ID },

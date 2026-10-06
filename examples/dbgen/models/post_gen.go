@@ -38,16 +38,19 @@ type Post struct {
 // PostTable is the table name for Post.
 const PostTable = "posts"
 
+// PostsCol is the typed column key for "posts" — use as map[PostsCol]any.
+type PostsCol = query.Col
+
 // PostColumns gives compile-time-checked column names.
 var PostColumns = struct {
-	ID        string
-	AuthorID  string
-	EditorID  string
-	Title     string
-	State     string
-	Body      string
-	Metadata  string
-	CreatedAt string
+	ID        PostsCol
+	AuthorID  PostsCol
+	EditorID  PostsCol
+	Title     PostsCol
+	State     PostsCol
+	Body      PostsCol
+	Metadata  PostsCol
+	CreatedAt PostsCol
 }{
 	ID:        "id",
 	AuthorID:  "author_id",
@@ -63,13 +66,29 @@ var PostColumns = struct {
 var PostColumnList = []string{"id", "author_id", "editor_id", "title", "state", "body", "metadata", "created_at"}
 
 // Posts is the typed query entrypoint for "posts".
-var Posts = query.Model[Post](query.Meta{
-	Table:       PostTable,
-	Columns:     PostColumnList,
-	PrimaryKey:  "id",
-	SoftDeletes: false,
-	Indexes:     PostIndexes,
-})
+// Methods are promoted from *query.Entity; use Posts.Col.<Field> as map[PostsCol]any keys.
+var Posts = struct {
+	*query.Entity[Post]
+	Col struct {
+		ID        PostsCol
+		AuthorID  PostsCol
+		EditorID  PostsCol
+		Title     PostsCol
+		State     PostsCol
+		Body      PostsCol
+		Metadata  PostsCol
+		CreatedAt PostsCol
+	}
+}{
+	Entity: query.Model[Post](query.Meta{
+		Table:       PostTable,
+		Columns:     PostColumnList,
+		PrimaryKey:  "id",
+		SoftDeletes: false,
+		Indexes:     PostIndexes,
+	}),
+	Col: PostColumns,
+}
 
 // PostIndexes mirrors the indexes that exist on "posts".
 var PostIndexes = []query.IndexInfo{
@@ -86,7 +105,7 @@ func init() {
 		LocalKey: "author_id", ForeignKey: "id",
 	}, func(ctx context.Context, db query.DB, rows []*Post) error {
 		return query.LoadBelongsTo(ctx, db, rows, query.BelongsTo[Post, User]{
-			Related:   Users,
+			Related:   Users.Entity,
 			OwnerKey:  "id",
 			ParentKey: func(m *Post) any { return m.AuthorID },
 			ChildKey:  func(r *User) any { return r.ID },
@@ -99,7 +118,7 @@ func init() {
 		LocalKey: "id", ForeignKey: "post_id",
 	}, func(ctx context.Context, db query.DB, rows []*Post) error {
 		return query.LoadHasMany(ctx, db, rows, query.HasMany[Post, Comment]{
-			Related:    Comments,
+			Related:    Comments.Entity,
 			ForeignKey: "post_id",
 			ParentKey:  func(m *Post) any { return m.ID },
 			ChildKey:   func(r *Comment) any { return r.PostID },
@@ -112,7 +131,7 @@ func init() {
 		LocalKey: "editor_id", ForeignKey: "id",
 	}, func(ctx context.Context, db query.DB, rows []*Post) error {
 		return query.LoadBelongsTo(ctx, db, rows, query.BelongsTo[Post, User]{
-			Related:   Users,
+			Related:   Users.Entity,
 			OwnerKey:  "id",
 			ParentKey: func(m *Post) any { return m.EditorID },
 			ChildKey:  func(r *User) any { return r.ID },
@@ -125,7 +144,7 @@ func init() {
 		LocalKey: "id", ForeignKey: "post_id",
 	}, func(ctx context.Context, db query.DB, rows []*Post) error {
 		return query.LoadHasOneOfMany(ctx, db, rows, query.HasOneOfMany[Post, Comment]{
-			Related:    Comments,
+			Related:    Comments.Entity,
 			ForeignKey: "post_id",
 			OrderCol:   "created_at",
 			Desc:       true,
@@ -140,7 +159,7 @@ func init() {
 		LocalKey: "id", ForeignKey: "post_id",
 	}, func(ctx context.Context, db query.DB, rows []*Post) error {
 		return query.LoadHasOneOfMany(ctx, db, rows, query.HasOneOfMany[Post, Comment]{
-			Related:    Comments,
+			Related:    Comments.Entity,
 			ForeignKey: "post_id",
 			OrderCol:   "created_at",
 			Desc:       false,
@@ -156,7 +175,7 @@ func init() {
 		PivotTable: "post_tags", PivotLocalKey: "post_id", PivotForeignKey: "tag_id",
 	}, func(ctx context.Context, db query.DB, rows []*Post) error {
 		return query.LoadBelongsToMany(ctx, db, rows, query.BelongsToMany[Post, Tag]{
-			Related:         Tags,
+			Related:         Tags.Entity,
 			PivotTable:      "post_tags",
 			PivotParentKey:  "post_id",
 			PivotRelatedKey: "tag_id",

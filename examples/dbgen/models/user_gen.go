@@ -50,17 +50,20 @@ type User struct {
 // UserTable is the table name for User.
 const UserTable = "users"
 
+// UsersCol is the typed column key for "users" — use as map[UsersCol]any.
+type UsersCol = query.Col
+
 // UserColumns gives compile-time-checked column names.
 var UserColumns = struct {
-	ID           string
-	Email        string
-	DisplayName  string
-	Status       string
-	ManagerID    string
-	SearchVector string
-	CreatedAt    string
-	UpdatedAt    string
-	DeletedAt    string
+	ID           UsersCol
+	Email        UsersCol
+	DisplayName  UsersCol
+	Status       UsersCol
+	ManagerID    UsersCol
+	SearchVector UsersCol
+	CreatedAt    UsersCol
+	UpdatedAt    UsersCol
+	DeletedAt    UsersCol
 }{
 	ID:           "id",
 	Email:        "email",
@@ -77,14 +80,31 @@ var UserColumns = struct {
 var UserColumnList = []string{"id", "email", "display_name", "status", "manager_id", "search_vector", "created_at", "updated_at", "deleted_at"}
 
 // Users is the typed query entrypoint for "users".
-var Users = query.Model[User](query.Meta{
-	Table:       UserTable,
-	Columns:     UserColumnList,
-	PrimaryKey:  "id",
-	SoftDeletes: true,
-	Generated:   []string{"search_vector"},
-	Indexes:     UserIndexes,
-})
+// Methods are promoted from *query.Entity; use Users.Col.<Field> as map[UsersCol]any keys.
+var Users = struct {
+	*query.Entity[User]
+	Col struct {
+		ID           UsersCol
+		Email        UsersCol
+		DisplayName  UsersCol
+		Status       UsersCol
+		ManagerID    UsersCol
+		SearchVector UsersCol
+		CreatedAt    UsersCol
+		UpdatedAt    UsersCol
+		DeletedAt    UsersCol
+	}
+}{
+	Entity: query.Model[User](query.Meta{
+		Table:       UserTable,
+		Columns:     UserColumnList,
+		PrimaryKey:  "id",
+		SoftDeletes: true,
+		Generated:   []string{"search_vector"},
+		Indexes:     UserIndexes,
+	}),
+	Col: UserColumns,
+}
 
 // UserIndexes mirrors the indexes that exist on "users".
 var UserIndexes = []query.IndexInfo{
@@ -101,7 +121,7 @@ func init() {
 		LocalKey: "id", ForeignKey: "author_id",
 	}, func(ctx context.Context, db query.DB, rows []*User) error {
 		return query.LoadHasMany(ctx, db, rows, query.HasMany[User, Post]{
-			Related:    Posts,
+			Related:    Posts.Entity,
 			ForeignKey: "author_id",
 			ParentKey:  func(m *User) any { return m.ID },
 			ChildKey:   func(r *Post) any { return r.AuthorID },
@@ -115,7 +135,7 @@ func init() {
 		PivotTable: "posts", PivotLocalKey: "author_id", PivotForeignKey: "id",
 	}, func(ctx context.Context, db query.DB, rows []*User) error {
 		return query.LoadHasManyThrough(ctx, db, rows, query.HasManyThrough[User, Comment]{
-			Related:      Comments,
+			Related:      Comments.Entity,
 			ThroughTable: "posts",
 			ThroughLocal: "author_id",
 			ThroughFar:   "id",
@@ -130,7 +150,7 @@ func init() {
 		LocalKey: "id", ForeignKey: "editor_id",
 	}, func(ctx context.Context, db query.DB, rows []*User) error {
 		return query.LoadHasMany(ctx, db, rows, query.HasMany[User, Post]{
-			Related:    Posts,
+			Related:    Posts.Entity,
 			ForeignKey: "editor_id",
 			ParentKey:  func(m *User) any { return m.ID },
 			ChildKey:   func(r *Post) any { return r.EditorID },
@@ -143,7 +163,7 @@ func init() {
 		LocalKey: "id", ForeignKey: "author_id",
 	}, func(ctx context.Context, db query.DB, rows []*User) error {
 		return query.LoadHasOneOfMany(ctx, db, rows, query.HasOneOfMany[User, Post]{
-			Related:    Posts,
+			Related:    Posts.Entity,
 			ForeignKey: "author_id",
 			OrderCol:   "created_at",
 			Desc:       true,
@@ -158,7 +178,7 @@ func init() {
 		LocalKey: "id", ForeignKey: "editor_id",
 	}, func(ctx context.Context, db query.DB, rows []*User) error {
 		return query.LoadHasOneOfMany(ctx, db, rows, query.HasOneOfMany[User, Post]{
-			Related:    Posts,
+			Related:    Posts.Entity,
 			ForeignKey: "editor_id",
 			OrderCol:   "created_at",
 			Desc:       true,
@@ -173,7 +193,7 @@ func init() {
 		LocalKey: "manager_id", ForeignKey: "id",
 	}, func(ctx context.Context, db query.DB, rows []*User) error {
 		return query.LoadBelongsTo(ctx, db, rows, query.BelongsTo[User, User]{
-			Related:   Users,
+			Related:   Users.Entity,
 			OwnerKey:  "id",
 			ParentKey: func(m *User) any { return m.ManagerID },
 			ChildKey:  func(r *User) any { return r.ID },
@@ -186,7 +206,7 @@ func init() {
 		LocalKey: "id", ForeignKey: "author_id",
 	}, func(ctx context.Context, db query.DB, rows []*User) error {
 		return query.LoadHasOneOfMany(ctx, db, rows, query.HasOneOfMany[User, Post]{
-			Related:    Posts,
+			Related:    Posts.Entity,
 			ForeignKey: "author_id",
 			OrderCol:   "created_at",
 			Desc:       false,
@@ -201,7 +221,7 @@ func init() {
 		LocalKey: "id", ForeignKey: "editor_id",
 	}, func(ctx context.Context, db query.DB, rows []*User) error {
 		return query.LoadHasOneOfMany(ctx, db, rows, query.HasOneOfMany[User, Post]{
-			Related:    Posts,
+			Related:    Posts.Entity,
 			ForeignKey: "editor_id",
 			OrderCol:   "created_at",
 			Desc:       false,
@@ -217,7 +237,7 @@ func init() {
 		PivotTable: "posts", PivotLocalKey: "editor_id", PivotForeignKey: "id",
 	}, func(ctx context.Context, db query.DB, rows []*User) error {
 		return query.LoadHasManyThrough(ctx, db, rows, query.HasManyThrough[User, Comment]{
-			Related:      Comments,
+			Related:      Comments.Entity,
 			ThroughTable: "posts",
 			ThroughLocal: "editor_id",
 			ThroughFar:   "id",
@@ -232,7 +252,7 @@ func init() {
 		LocalKey: "id", ForeignKey: "user_id",
 	}, func(ctx context.Context, db query.DB, rows []*User) error {
 		return query.LoadHasMany(ctx, db, rows, query.HasMany[User, Profile]{
-			Related:    Profiles,
+			Related:    Profiles.Entity,
 			ForeignKey: "user_id",
 			ParentKey:  func(m *User) any { return m.ID },
 			ChildKey:   func(r *Profile) any { return r.UserID },
@@ -249,7 +269,7 @@ func init() {
 		LocalKey: "id", ForeignKey: "manager_id",
 	}, func(ctx context.Context, db query.DB, rows []*User) error {
 		return query.LoadHasMany(ctx, db, rows, query.HasMany[User, User]{
-			Related:    Users,
+			Related:    Users.Entity,
 			ForeignKey: "manager_id",
 			ParentKey:  func(m *User) any { return m.ID },
 			ChildKey:   func(r *User) any { return r.ManagerID },

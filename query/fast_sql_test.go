@@ -104,7 +104,7 @@ func TestIncrementDecrementSQL(t *testing.T) {
 func TestUpsertSQL(t *testing.T) {
 	db := &fakeDB{execRes: fakeResult{affected: 1}}
 	_, err := fastUsers().Upsert(context.Background(), db,
-		[]map[string]any{{"email": "a@x.io", "age": 20}},
+		[]map[Col]any{{"email": "a@x.io", "age": 20}},
 		[]string{"email"}, []string{"age"})
 	if err != nil {
 		t.Fatal(err)
@@ -119,7 +119,7 @@ func TestUpsertSQL(t *testing.T) {
 
 	db = &fakeDB{execRes: fakeResult{affected: 1}}
 	_, err = fastUsers().New().Dialect(DialectMySQL).Upsert(context.Background(), db,
-		[]map[string]any{{"email": "a@x.io", "age": 20}},
+		[]map[Col]any{{"email": "a@x.io", "age": 20}},
 		[]string{"email"}, []string{"age"})
 	if err != nil {
 		t.Fatal(err)
@@ -374,7 +374,7 @@ func TestFirstOrCreateRequiresUniqueIndex(t *testing.T) {
 		Table: "users", Columns: []string{"id", "email", "age"}, PrimaryKey: "id",
 		// no Indexes, attrs is email — not the PK
 	})
-	_, err := Users.FirstOrCreate(context.Background(), &fakeDB{}, map[string]any{"email": "a@x.io"})
+	_, err := Users.FirstOrCreate(context.Background(), &fakeDB{}, map[Col]any{"email": "a@x.io"})
 	if err == nil || !IsValidationError(err) {
 		t.Fatalf("want validation error, got %v", err)
 	}
@@ -413,7 +413,7 @@ func TestFirstOrCreateSelectThenInsert(t *testing.T) {
 	db := (&fakeDB{}).
 		on("RETURNING", []string{"id"}, []any{int64(7)}).
 		on(`FROM "users"`, []string{"id", "email", "age"})
-	_, err := fastUsers().FirstOrCreate(context.Background(), db, map[string]any{"email": "a@x.io"})
+	_, err := fastUsers().FirstOrCreate(context.Background(), db, map[Col]any{"email": "a@x.io"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -431,7 +431,7 @@ func TestFirstOrCreateSelectThenInsert(t *testing.T) {
 
 func TestFirstOrCreateReturnsExisting(t *testing.T) {
 	db := (&fakeDB{}).on(`FROM "users"`, []string{"id", "email", "age"}, []any{int64(3), "a@x.io", 21})
-	row, err := fastUsers().FirstOrCreate(context.Background(), db, map[string]any{"email": "a@x.io"})
+	row, err := fastUsers().FirstOrCreate(context.Background(), db, map[Col]any{"email": "a@x.io"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -447,7 +447,7 @@ func TestFirstOrCreateReturnsExisting(t *testing.T) {
 
 func TestFirstOrCreateRecoversOnUniqueViolation(t *testing.T) {
 	db := &orCreateRaceDB{email: "a@x.io"}
-	row, err := fastUsers().FirstOrCreate(context.Background(), db, map[string]any{"email": "a@x.io"})
+	row, err := fastUsers().FirstOrCreate(context.Background(), db, map[Col]any{"email": "a@x.io"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -464,7 +464,7 @@ func TestFirstOrCreateRecoversOnUniqueViolation(t *testing.T) {
 
 func TestFirstOrCreateSurfacesNonUniqueInsertError(t *testing.T) {
 	db := &orCreateRaceDB{email: "a@x.io", insertErr: &pgconn.PgError{Code: "23503", ConstraintName: "users_team_fkey"}}
-	_, err := fastUsers().FirstOrCreate(context.Background(), db, map[string]any{"email": "a@x.io"})
+	_, err := fastUsers().FirstOrCreate(context.Background(), db, map[Col]any{"email": "a@x.io"})
 	if err == nil {
 		t.Fatal("expected foreign-key error")
 	}
@@ -476,8 +476,8 @@ func TestFirstOrCreateSurfacesNonUniqueInsertError(t *testing.T) {
 func TestUpdateOrCreateRecoversOnUniqueViolation(t *testing.T) {
 	db := &orCreateRaceDB{email: "a@x.io"}
 	row, err := fastUsers().UpdateOrCreate(context.Background(), db,
-		map[string]any{"email": "a@x.io"},
-		map[string]any{"age": 30},
+		map[Col]any{"email": "a@x.io"},
+		map[Col]any{"age": 30},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -496,8 +496,8 @@ func TestUpdateOrCreateUpdatesExisting(t *testing.T) {
 		on("UPDATE", nil)
 	db.execRes = fakeResult{affected: 1}
 	row, err := fastUsers().UpdateOrCreate(context.Background(), db,
-		map[string]any{"email": "a@x.io"},
-		map[string]any{"age": 40},
+		map[Col]any{"email": "a@x.io"},
+		map[Col]any{"age": 40},
 	)
 	if err != nil {
 		t.Fatal(err)

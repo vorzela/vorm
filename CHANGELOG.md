@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.12] — 2026-10-06
+
+### Added
+
+- Typed column keys: `query.Col` / `map[query.Col]any` for Create, Update,
+  CreateMany, Upsert, FirstOrCreate, and UpdateOrCreate (replaces
+  `map[string]any` on those APIs).
+- Model codegen emits `UsersCol = query.Col` and `Users.Col.<Field>` so apps
+  can write `map[models.UsersCol]any{ models.Users.Col.Email: email }`.
+- Create stubs accept `Users.Col` / `UserColumns` selectors as map keys;
+  empty Create maps fail at generate time instead of emitting
+  `INSERT INTO "t" () VALUES ()`.
+
+### Changed
+
+- Generated entity entrypoints wrap `*query.Entity` with a `Col` field for IDE
+  discovery of column keys alongside Create/Where/….
+
 ## [0.2.11] — 2026-10-02
 
 ### Added
@@ -157,10 +175,11 @@ gen:
 - First standalone release: in-process migrations, database-introspected models, and `// vorm:query` stubs lowered to parameterized sqlc-style Go.
 
 ```
-go install github.com/vorzela/vorm/cmd/vorm@v0.2.11
+go install github.com/vorzela/vorm/cmd/vorm@v0.2.12
 ```
 
-[Unreleased]: https://github.com/vorzela/vorm/compare/v0.2.11...HEAD
+[Unreleased]: https://github.com/vorzela/vorm/compare/v0.2.12...HEAD
+[0.2.12]: https://github.com/vorzela/vorm/compare/v0.2.11...v0.2.12
 [0.2.11]: https://github.com/vorzela/vorm/compare/v0.2.10...v0.2.11
 [0.2.10]: https://github.com/vorzela/vorm/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/vorzela/vorm/compare/v0.2.8...v0.2.9

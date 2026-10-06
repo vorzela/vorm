@@ -578,7 +578,12 @@ func sortedKeys(values map[string]any) []string {
 }
 
 // Create inserts an explicit column map and returns the new primary key.
-func (b *Builder[T]) Create(ctx context.Context, db DB, values map[string]any) (int64, error) {
+// Prefer typed keys: map[models.UsersCol]any{ models.Users.Col.Email: email }.
+func (b *Builder[T]) Create(ctx context.Context, db DB, values map[Col]any) (int64, error) {
+	return b.createStrings(ctx, db, stringMap(values))
+}
+
+func (b *Builder[T]) createStrings(ctx context.Context, db DB, values map[string]any) (int64, error) {
 	if len(values) == 0 {
 		return 0, validationErr("insert", b.meta.Table, "Create requires values")
 	}
@@ -641,7 +646,11 @@ func (b *Builder[T]) Create(ctx context.Context, db DB, values map[string]any) (
 
 // CreateMany inserts several rows in one statement. Every map must carry the
 // same columns; the primary keys are not returned.
-func (b *Builder[T]) CreateMany(ctx context.Context, db DB, rows []map[string]any) (int64, error) {
+func (b *Builder[T]) CreateMany(ctx context.Context, db DB, rows []map[Col]any) (int64, error) {
+	return b.createManyStrings(ctx, db, stringMaps(rows))
+}
+
+func (b *Builder[T]) createManyStrings(ctx context.Context, db DB, rows []map[string]any) (int64, error) {
 	if len(rows) == 0 {
 		return 0, nil
 	}
@@ -705,7 +714,11 @@ func (b *Builder[T]) CreateMany(ctx context.Context, db DB, rows []map[string]an
 }
 
 // Update sets columns for rows matching WHERE.
-func (b *Builder[T]) Update(ctx context.Context, db DB, values map[string]any) (int64, error) {
+func (b *Builder[T]) Update(ctx context.Context, db DB, values map[Col]any) (int64, error) {
+	return b.updateStrings(ctx, db, stringMap(values))
+}
+
+func (b *Builder[T]) updateStrings(ctx context.Context, db DB, values map[string]any) (int64, error) {
 	if len(values) == 0 {
 		return 0, validationErr("update", b.meta.Table, "Update requires values")
 	}

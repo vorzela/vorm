@@ -211,7 +211,7 @@ import (
 )
 // vorm:query name=ByName
 func ByName(ctx context.Context, db query.DB, name string) (*User, error) {
-	return Users.FirstOrCreate(ctx, db, map[string]any{"name": name})
+	return Users.FirstOrCreate(ctx, db, map[query.Col]any{"name": name})
 }
 `
 	if err := os.WriteFile(filepath.Join(qdir, "q.go"), []byte(stub), 0o644); err != nil {
@@ -246,7 +246,7 @@ import (
 )
 // vorm:query name=ByEmail
 func ByEmail(ctx context.Context, db query.DB, email string) (*User, error) {
-	return Users.FirstOrCreate(ctx, db, map[string]any{"email": email})
+	return Users.FirstOrCreate(ctx, db, map[query.Col]any{"email": email})
 }
 `
 	if err := os.WriteFile(filepath.Join(qdir, "q.go"), []byte(stub), 0o644); err != nil {

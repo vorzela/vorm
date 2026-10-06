@@ -353,8 +353,8 @@ func parseModelsDir(dir string) (map[string]ModelSpec, error) {
 					continue
 				}
 				entity := vs.Names[0].Name
-				call, ok := vs.Values[0].(*ast.CallExpr)
-				if !ok {
+				call := modelCallFromVar(vs.Values[0])
+				if call == nil {
 					continue
 				}
 				modelType, meta, ok := parseModelCall(call, consts)
@@ -519,6 +519,28 @@ func (ms ModelSpec) relation(name string) (RelSpec, bool) {
 		}
 	}
 	return RelSpec{}, false
+}
+
+// modelCallFromVar finds query.Model[T](...) whether assigned directly or as
+// the Entity: field of a Col-bearing wrapper struct.
+func modelCallFromVar(expr ast.Expr) *ast.CallExpr {
+	if call, ok := expr.(*ast.CallExpr); ok {
+		return call
+	}
+	cl, ok := expr.(*ast.CompositeLit)
+	if !ok {
+		return nil
+	}
+	for _, elt := range cl.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok || exprString(kv.Key) != "Entity" {
+			continue
+		}
+		if call, ok := kv.Value.(*ast.CallExpr); ok {
+			return call
+		}
+	}
+	return nil
 }
 
 func parseModelCall(call *ast.CallExpr, consts *pkgConsts) (typeName string, meta query.Meta, ok bool) {
@@ -829,14 +851,19 @@ func lowerCallChain(call *ast.CallExpr, st *StubFunc, models map[string]ModelSpe
 		return lowerBuilderChain(sel.X, st, models)
 	case "Create":
 		st.Action = action
-		if len(call.Args) >= 3 {
-			st.CreateVals = parseMapLit(call.Args[2])
+		if len(call.Args) < 3 {
+			st.GenerateErr = "Create needs (ctx, db, map[UsersCol]any{ Users.Col.X: value, ... }) with a literal column map"
+			return lowerEntityStart(sel.X, st, models) || true
+		}
+		st.CreateVals = parseMapLit(call.Args[2], models)
+		if len(st.CreateVals) == 0 {
+			st.GenerateErr = "Create needs a literal map[UsersCol]any{ Users.Col.X: value, ... } (or map[query.Col]any)"
 		}
 		return lowerBuilderChain(sel.X, st, models) || lowerEntityStart(sel.X, st, models)
 	case "Update":
 		st.Action = action
 		if len(call.Args) >= 3 {
-			st.UpdateVals = parseMapLit(call.Args[2])
+			st.UpdateVals = parseMapLit(call.Args[2], models)
 		}
 		return lowerBuilderChain(sel.X, st, models)
 	case "SoftDelete", "ForceDelete":
@@ -899,10 +926,10 @@ func lowerCallChain(call *ast.CallExpr, st *StubFunc, models map[string]ModelSpe
 // on the runtime builder.
 func lowerOrCreate(action string, call *ast.CallExpr, recv ast.Expr, st *StubFunc, models map[string]ModelSpec) bool {
 	if len(call.Args) < 3 {
-		st.GenerateErr = action + " needs a literal attrs map[string]any"
+		st.GenerateErr = action + " needs a literal attrs map[Col]any"
 		return false
 	}
-	attrs := parseMapLit(call.Args[2])
+	attrs := parseMapLit(call.Args[2], models)
 	if len(attrs) == 0 {
 		st.GenerateErr = action + " attrs must be a map literal with string column keys (so generate can verify a unique index)"
 		return false
@@ -1488,7 +1515,7 @@ func parseOperatorHelper(col string, arg ast.Expr) (WhereSpec, bool) {
 	return WhereSpec{}, false
 }
 
-func parseMapLit(expr ast.Expr) []KVSpec {
+func parseMapLit(expr ast.Expr, models map[string]ModelSpec) []KVSpec {
 	cl, ok := expr.(*ast.CompositeLit)
 	if !ok {
 		return nil
@@ -1499,13 +1526,34 @@ func parseMapLit(expr ast.Expr) []KVSpec {
 		if !ok {
 			continue
 		}
-		col, ok := litString(kv.Key)
+		col, ok := resolveColumnKey(kv.Key, models)
 		if !ok {
 			continue
 		}
 		out = append(out, KVSpec{Col: col, Expr: exprString(kv.Value)})
 	}
 	return out
+}
+
+// resolveColumnKey accepts "first_name" or typed selectors like
+// UserColumns.FirstName / models.Users.Col.FirstName / Users.Col.FirstName.
+func resolveColumnKey(e ast.Expr, models map[string]ModelSpec) (string, bool) {
+	if s, ok := litString(e); ok {
+		return s, true
+	}
+	sel, ok := e.(*ast.SelectorExpr)
+	if !ok {
+		return "", false
+	}
+	field := sel.Sel.Name
+	for _, ms := range models {
+		for _, col := range ms.Columns {
+			if GoFieldName(col) == field {
+				return col, true
+			}
+		}
+	}
+	return "", false
 }
 
 // --- AST helpers ---
