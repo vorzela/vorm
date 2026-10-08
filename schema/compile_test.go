@@ -72,7 +72,10 @@ func Up(s *schema.Facade) {
 		t.Index("group_members_pair_uq").UniqueOn("group_id", "user_id")
 	})
 }
-func Down(s *schema.Facade) { s.DropIfExists("group_members") }
+func Down(s *schema.Facade) {
+	s.DropIndex("group_members_user_idx", "group_members_pair_uq")
+	s.DropIfExists("group_members")
+}
 `
 	got, err := schema.CompileSource("members.go", src, "postgres")
 	if err != nil {
@@ -85,6 +88,26 @@ func Down(s *schema.Facade) { s.DropIfExists("group_members") }
 		if !strings.Contains(got.UpSQL, want) {
 			t.Fatalf("missing %q\n%s", want, got.UpSQL)
 		}
+	}
+	for _, want := range []string{
+		"DROP INDEX IF EXISTS group_members_user_idx;",
+		"DROP INDEX IF EXISTS group_members_pair_uq;",
+		"DROP TABLE IF EXISTS group_members CASCADE;",
+	} {
+		if !strings.Contains(got.DownSQL, want) {
+			t.Fatalf("Down missing %q\n%s", want, got.DownSQL)
+		}
+	}
+}
+
+func TestCompileDropIndexes(t *testing.T) {
+	got := schema.CompileDropIndexes([]string{"a", "b"}, "postgres")
+	want := "DROP INDEX IF EXISTS a;\nDROP INDEX IF EXISTS b;"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+	if schema.CompileDropIndex("x", "mysql") != "DROP INDEX x;" {
+		t.Fatalf("mysql: %q", schema.CompileDropIndex("x", "mysql"))
 	}
 }
 

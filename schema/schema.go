@@ -117,6 +117,33 @@ func (f *Facade) DropIfExists(table string) error {
 	return wrap("migrate", table, path, f.maybeMigrate(), "")
 }
 
+// DropIndex writes a migration that drops one or more indexes by name.
+//
+//	s.DropIndex("group_members_user_idx")
+//	s.DropIndex("idx_a", "idx_b")
+//
+// Postgres/MariaDB: DROP INDEX IF EXISTS name;
+// MySQL: use s.Table("t", func(t *Blueprint) { t.DropIndex("name") }) (needs ON table).
+func (f *Facade) DropIndex(names ...string) error {
+	if len(names) == 0 {
+		return &Error{Op: "drop_index", Hint: "at least one index name is required"}
+	}
+	d := f.resolveDialect()
+	up := CompileDropIndexes(names, d)
+	down := "-- restore indexes manually"
+	label := names[0]
+	if len(names) > 1 {
+		label = fmt.Sprintf("%s_and_%d_more", names[0], len(names)-1)
+	}
+	name := "drop_index_" + label
+	path, err := f.writeMigration(name, up, down)
+	if err != nil {
+		return wrap("drop_index", label, "", err, "")
+	}
+	fmt.Fprintf(os.Stderr, "vorm: wrote %s\n", path)
+	return wrap("migrate", label, path, f.maybeMigrate(), "")
+}
+
 // Migrate applies pending migrations once (use after several Creates with
 // AutoMigrate=false).
 func (f *Facade) Migrate() error {

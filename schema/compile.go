@@ -172,7 +172,7 @@ func facadeMethod(call *ast.CallExpr) (string, bool) {
 		return "", false
 	}
 	switch sel.Sel.Name {
-	case "Create", "Table", "DropIfExists", "Drop", "BelongsToMany", "MorphToMany", "CreateExtension", "CreateEnum", "CreateFunction":
+	case "Create", "Table", "DropIfExists", "Drop", "DropIndex", "BelongsToMany", "MorphToMany", "CreateExtension", "CreateEnum", "CreateFunction":
 		return sel.Sel.Name, true
 	}
 	return "", false
@@ -215,6 +215,12 @@ func compileFacadeCall(filename string, call *ast.CallExpr, dialect string) (up,
 			return "", "", fmt.Errorf("schema: %s: %s needs a table name: %w", filename, name, err)
 		}
 		return CompileDropIfExists(table, dialect), fmt.Sprintf("-- restore %s manually", table), nil
+	case "DropIndex":
+		names, err := stringLiterals(call.Args)
+		if err != nil || len(names) == 0 {
+			return "", "", fmt.Errorf("schema: %s: DropIndex needs one or more index names: %w", filename, err)
+		}
+		return CompileDropIndexes(names, dialect), "-- restore indexes manually", nil
 	case "BelongsToMany":
 		left, err := stringLiteral(call.Args, 0)
 		if err != nil {
@@ -934,4 +940,26 @@ func CompileDropIfExists(table, dialect string) string {
 		return fmt.Sprintf("DROP TABLE IF EXISTS %s;", table)
 	}
 	return fmt.Sprintf("DROP TABLE IF EXISTS %s CASCADE;", table)
+}
+
+// CompileDropIndex returns dialect-correct DROP INDEX SQL for one name.
+// Postgres and MariaDB use IF EXISTS. MySQL has no IF EXISTS and needs ON table
+// for a complete statement — prefer Blueprint.DropIndex inside Table() there.
+func CompileDropIndex(name, dialect string) string {
+	if dialect == "mysql" {
+		return fmt.Sprintf("DROP INDEX %s;", name)
+	}
+	return fmt.Sprintf("DROP INDEX IF EXISTS %s;", name)
+}
+
+// CompileDropIndexes joins CompileDropIndex for each name.
+func CompileDropIndexes(names []string, dialect string) string {
+	parts := make([]string, 0, len(names))
+	for _, n := range names {
+		if n == "" {
+			continue
+		}
+		parts = append(parts, CompileDropIndex(n, dialect))
+	}
+	return strings.Join(parts, "\n")
 }
