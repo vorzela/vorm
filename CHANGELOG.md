@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.15] — 2026-10-08
+
+### Changed
+
+- `Default(v)` auto-quotes Go strings and JSON values as SQL literals
+  (`.Default("KES")` → `DEFAULT 'KES'`, `.Default("{}")` → `DEFAULT '{}'`).
+  Bool/int/float stay unquoted. Already-quoted `'…'` and known SQL
+  expressions (`CURRENT_TIMESTAMP`, `gen_random_uuid()`, …) are left as-is.
+
+### Added
+
+- `DefaultRaw(sql)` for arbitrary DEFAULT expressions.
+
 ## [0.2.14] — 2026-10-08
 
 ### Added

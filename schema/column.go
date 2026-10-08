@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -78,30 +79,28 @@ func (c *Column) Unique() *Column {
 	return c
 }
 
-// Default sets a column default. Accepts bool, int/int64, float, or raw SQL string.
+// Default sets a column default from a Go value. Strings and JSON are quoted
+// as SQL literals; bool/int/float stay unquoted.
 //
-//	t.Boolean("active").Default(true)
-//	t.Integer("age").Default(0)
-//	t.String("role").Default("'member'") // quoted SQL literal
+//	t.Boolean("active").Default(true)          // DEFAULT TRUE
+//	t.Integer("age").Default(0)                // DEFAULT 0
+//	t.String("currency_code").Default("KES")   // DEFAULT 'KES'
+//	t.Json("meta").Default("{}")               // DEFAULT '{}'
+//	t.Json("meta").Default(map[string]any{})   // DEFAULT '{}'
+//
+// Already-quoted SQL ('KES') and known SQL expressions (CURRENT_TIMESTAMP,
+// gen_random_uuid(), NULL, …) are left as-is. Prefer DefaultRaw for other SQL.
 func (c *Column) Default(v any) *Column {
-	switch x := v.(type) {
-	case bool:
-		if x {
-			c.defaultExpr = "TRUE"
-		} else {
-			c.defaultExpr = "FALSE"
-		}
-	case int:
-		c.defaultExpr = strconv.Itoa(x)
-	case int64:
-		c.defaultExpr = strconv.FormatInt(x, 10)
-	case float64:
-		c.defaultExpr = strconv.FormatFloat(x, 'f', -1, 64)
-	case string:
-		c.defaultExpr = x
-	default:
-		c.defaultExpr = fmt.Sprint(v)
-	}
+	c.defaultExpr = formatDefault(v)
+	return c
+}
+
+// DefaultRaw sets a DEFAULT expression written through unchanged.
+//
+//	t.UUID("id").DefaultRaw("gen_random_uuid()")
+//	t.Timestamp("expires_at").DefaultRaw("NOW() + INTERVAL '7 days'")
+func (c *Column) DefaultRaw(expr string) *Column {
+	c.defaultExpr = strings.TrimSpace(expr)
 	return c
 }
 
@@ -110,6 +109,104 @@ func (c *Column) DefaultCurrent() *Column {
 	c.defaultExpr = "CURRENT_TIMESTAMP"
 	c.nullable = false
 	return c
+}
+
+func formatDefault(v any) string {
+	switch x := v.(type) {
+	case bool:
+		if x {
+			return "TRUE"
+		}
+		return "FALSE"
+	case int:
+		return strconv.Itoa(x)
+	case int8:
+		return strconv.FormatInt(int64(x), 10)
+	case int16:
+		return strconv.FormatInt(int64(x), 10)
+	case int32:
+		return strconv.FormatInt(int64(x), 10)
+	case int64:
+		return strconv.FormatInt(x, 10)
+	case uint:
+		return strconv.FormatUint(uint64(x), 10)
+	case uint8:
+		return strconv.FormatUint(uint64(x), 10)
+	case uint16:
+		return strconv.FormatUint(uint64(x), 10)
+	case uint32:
+		return strconv.FormatUint(uint64(x), 10)
+	case uint64:
+		return strconv.FormatUint(x, 10)
+	case float32:
+		return strconv.FormatFloat(float64(x), 'f', -1, 32)
+	case float64:
+		return strconv.FormatFloat(x, 'f', -1, 64)
+	case string:
+		return formatDefaultString(x)
+	case json.RawMessage:
+		if len(x) == 0 {
+			return quoteSQLString("null")
+		}
+		return quoteSQLString(string(x))
+	case []byte:
+		return quoteSQLString(string(x))
+	case nil:
+		return "NULL"
+	default:
+		b, err := json.Marshal(x)
+		if err != nil {
+			return quoteSQLString(fmt.Sprint(v))
+		}
+		return quoteSQLString(string(b))
+	}
+}
+
+func formatDefaultString(s string) string {
+	if isSQLStringLiteral(s) || isSQLDefaultExpr(s) {
+		return s
+	}
+	return quoteSQLString(s)
+}
+
+func quoteSQLString(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// isSQLStringLiteral reports whether s is already a single-quoted SQL literal
+// (including escaped '' inside), e.g. 'KES' or 'it''s'.
+func isSQLStringLiteral(s string) bool {
+	if len(s) < 2 || s[0] != '\'' || s[len(s)-1] != '\'' {
+		return false
+	}
+	inner := s[1 : len(s)-1]
+	for i := 0; i < len(inner); i++ {
+		if inner[i] != '\'' {
+			continue
+		}
+		if i+1 >= len(inner) || inner[i+1] != '\'' {
+			return false
+		}
+		i++
+	}
+	return true
+}
+
+// isSQLDefaultExpr keeps common raw SQL defaults working without DefaultRaw.
+func isSQLDefaultExpr(s string) bool {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return false
+	}
+	upper := strings.ToUpper(trimmed)
+	switch upper {
+	case "NULL", "TRUE", "FALSE",
+		"CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME",
+		"LOCALTIMESTAMP", "LOCALTIME":
+		return true
+	}
+	// Function / cast expression: gen_random_uuid(), NOW(), '{}'::jsonb
+	return strings.ContainsAny(trimmed, "():")
 }
 
 // Constrained sets REFERENCES table(id). Optional second arg is the parent column.

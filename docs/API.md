@@ -666,10 +666,18 @@ t.UUID("public_id").Unique()
 
 ### Column chain
 
-`Column(name)` (after `CustomType` only), `Primary()`, `Nullable()`, `NotNull()`, `Unique()`, `Default(v)`, `DefaultCurrent()`,
+`Column(name)` (after `CustomType` only), `Primary()`, `Nullable()`, `NotNull()`, `Unique()`,
+`Default(v)` (auto-quotes strings/JSON; bool/int/float unquoted), `DefaultRaw(sql)`, `DefaultCurrent()`,
 `Constrained(table)`, `Constrained(table, column)`, `References(table, column)`,
 `CascadeOnDelete()`, `RestrictOnDelete()`, `NullOnDelete()`,
 `CascadeOnUpdate()`.
+
+```go
+t.String("currency_code").Default("KES")     // DEFAULT 'KES'
+t.Json("meta").Default("{}")                 // DEFAULT '{}'
+t.Json("meta").Default(map[string]any{})     // DEFAULT '{}'
+t.UUID("id").DefaultRaw("gen_random_uuid()") // raw SQL
+```
 
 Helpers: `schema.Singularize`, `Pluralize`, `PivotName`.
 

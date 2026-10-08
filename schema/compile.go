@@ -694,6 +694,13 @@ func applyColumnMethod(filename string, col *Column, step callStep) error {
 		}
 		col.Default(v)
 		return nil
+	case "DefaultRaw":
+		expr, err := stringLiteral(step.args, 0)
+		if err != nil {
+			return fmt.Errorf("schema: %s: DefaultRaw needs a SQL expression string", filename)
+		}
+		col.DefaultRaw(expr)
+		return nil
 	case "DefaultCurrent":
 		col.DefaultCurrent()
 		return nil

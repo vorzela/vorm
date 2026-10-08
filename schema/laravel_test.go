@@ -51,6 +51,29 @@ func TestForeignKeyOnDelete(t *testing.T) {
 	}
 }
 
+func TestDefaultAutoQuotesStringsAndJSON(t *testing.T) {
+	bp := schema.NewBlueprint("groups")
+	bp.String("currency_code").Default("KES")
+	bp.Json("meta").Default("{}")
+	bp.Json("settings").Default(map[string]any{"theme": "dark"})
+	bp.String("role").Default("'admin'") // already quoted — left as-is
+	bp.Boolean("active").Default(true)
+	bp.Timestamp("created_at").DefaultRaw("CURRENT_TIMESTAMP")
+	up, _ := bp.Compile("postgres")
+	for _, want := range []string{
+		"currency_code VARCHAR(255) NOT NULL DEFAULT 'KES'",
+		`meta JSONB NULL DEFAULT '{}'`,
+		`settings JSONB NULL DEFAULT '{"theme":"dark"}'`,
+		"role VARCHAR(255) NOT NULL DEFAULT 'admin'",
+		"active BOOLEAN NOT NULL DEFAULT TRUE",
+		"created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP",
+	} {
+		if !strings.Contains(up, want) {
+			t.Fatalf("missing %q\nup:\n%s", want, up)
+		}
+	}
+}
+
 func TestBelongsToOptionalParentColumn(t *testing.T) {
 	bp := schema.NewBlueprint("posts")
 	bp.BelongsTo("author_id", "uuid", "users")
