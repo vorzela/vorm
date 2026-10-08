@@ -265,7 +265,13 @@ func renderModel(opts SchemaOptions, mapper *TypeMapper, t introspect.Table, tab
 
 	pk := t.SinglePrimaryKey()
 	if pk == "" {
-		pk = "id"
+		// Composite PKs have no single key; use the first column for RETURNING /
+		// FindByID. Prefer that over inventing a non-existent "id".
+		if len(t.PrimaryKey) > 0 {
+			pk = t.PrimaryKey[0]
+		} else {
+			pk = "id"
+		}
 	}
 
 	var b strings.Builder
