@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.19] — 2026-10-09
+
+### Added
+
+- Named indexes: `t.Index("group_members_user_idx").On("user_id")` and
+  `t.Index("name").UniqueOn("a", "b")`. Postgres and MariaDB emit
+  `CREATE INDEX IF NOT EXISTS`; MySQL omits `IF NOT EXISTS`.
+- Multiple indexes per table via repeated `Index` / `Unique` calls.
+
 ## [0.2.18] — 2026-10-09
 
 ### Added

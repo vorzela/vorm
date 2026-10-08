@@ -650,7 +650,10 @@ func Down(s *schema.Facade) {
 | `Enum(col, values...)` | PG type / MySQL ENUM |
 | `Timestamps()` / `TimestampsTz()` | `created_at`, `updated_at` (`TIMESTAMPTZ` on Postgres) |
 | `SoftDeletes()` | `deleted_at` + index |
-| `Index` / `Unique` | indexes |
+| `Index(cols...)` | auto-named non-unique index |
+| `Index(name).On(cols...)` | named index (`IF NOT EXISTS` on Postgres/MariaDB) |
+| `Index(name).UniqueOn(cols...)` | named unique index |
+| `Unique(cols...)` | auto-named unique index |
 | `Primary(cols...)` | table PRIMARY KEY (composite OK); errors if another PK exists |
 | `DropColumn` / `DropIndex` | alter down |
 | `Raw(up, down)` | dialect SQL appended as-is |

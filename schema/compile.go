@@ -372,6 +372,9 @@ func applyBlueprintCall(filename string, bp *Blueprint, call *ast.CallExpr) erro
 	if len(steps) == 0 {
 		return fmt.Errorf("schema: %s: expected a Blueprint method call", filename)
 	}
+	if steps[0].name == "Index" {
+		return applyIndexChain(filename, bp, steps)
+	}
 	col, err := applyRoot(filename, bp, steps[0])
 	if err != nil {
 		return err
@@ -386,6 +389,36 @@ func applyBlueprintCall(filename string, bp *Blueprint, call *ast.CallExpr) erro
 	}
 	if col != nil && col.custom && col.name == "" {
 		return fmt.Errorf("schema: %s: CustomType requires .Column(\"name\")", filename)
+	}
+	return nil
+}
+
+func applyIndexChain(filename string, bp *Blueprint, steps []callStep) error {
+	cols, err := stringLiterals(steps[0].args)
+	if err != nil || len(cols) == 0 {
+		return fmt.Errorf("schema: %s: Index needs a name or column names", filename)
+	}
+	if len(steps) == 1 {
+		bp.Index(cols...)
+		return nil
+	}
+	if len(cols) != 1 {
+		return fmt.Errorf("schema: %s: Index().On/UniqueOn needs a single index name (got %d args)", filename, len(cols))
+	}
+	ib := bp.Index(cols[0])
+	for _, step := range steps[1:] {
+		c, err := stringLiterals(step.args)
+		if err != nil || len(c) == 0 {
+			return fmt.Errorf("schema: %s: Index.%s needs column names", filename, step.name)
+		}
+		switch step.name {
+		case "On":
+			ib.On(c...)
+		case "UniqueOn":
+			ib.UniqueOn(c...)
+		default:
+			return fmt.Errorf("schema: %s: unknown Index chain .%s() (use On or UniqueOn)", filename, step.name)
+		}
 	}
 	return nil
 }
@@ -624,9 +657,10 @@ func applyRoot(filename string, bp *Blueprint, root callStep) (*Column, error) {
 		}
 		return bp.CustomType(sqlType), nil
 	case "Index":
+		// Handled by applyIndexChain when Index is the statement root.
 		cols, err := stringLiterals(root.args)
 		if err != nil || len(cols) == 0 {
-			return nil, fmt.Errorf("schema: %s: Index needs column names", filename)
+			return nil, fmt.Errorf("schema: %s: Index needs a name or column names", filename)
 		}
 		bp.Index(cols...)
 		return nil, nil

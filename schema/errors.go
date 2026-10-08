@@ -50,6 +50,7 @@ func ValidateBlueprint(bp *Blueprint) error {
 	if bp.table == "" {
 		return &Error{Op: "validate", Hint: "table name is required"}
 	}
+	bp.flushPendingIndexes()
 	seen := map[string]bool{}
 	var columnPrimary string
 	for _, c := range bp.columns {
@@ -85,6 +86,24 @@ func ValidateBlueprint(bp *Blueprint) error {
 	for _, col := range bp.primary {
 		if !seen[col] {
 			return &Error{Op: "validate", Table: bp.table, Hint: fmt.Sprintf("Primary(%q) references unknown column", col)}
+		}
+	}
+	idxNames := map[string]bool{}
+	for _, ix := range bp.indexes {
+		if ix.name == "" {
+			return &Error{Op: "validate", Table: bp.table, Hint: "index with empty name"}
+		}
+		if idxNames[ix.name] {
+			return &Error{Op: "validate", Table: bp.table, Hint: fmt.Sprintf("duplicate index name %q", ix.name)}
+		}
+		idxNames[ix.name] = true
+		if len(ix.cols) == 0 {
+			return &Error{Op: "validate", Table: bp.table, Hint: fmt.Sprintf("index %q has no columns", ix.name)}
+		}
+		for _, col := range ix.cols {
+			if !seen[col] {
+				return &Error{Op: "validate", Table: bp.table, Hint: fmt.Sprintf("index %q references unknown column %q", ix.name, col)}
+			}
 		}
 	}
 	for _, e := range bp.enums {

@@ -52,6 +52,36 @@ func TestForeignKeyOnDelete(t *testing.T) {
 	}
 }
 
+func TestNamedIndexOnAndUniqueOn(t *testing.T) {
+	bp := schema.NewBlueprint("group_members")
+	bp.BelongsTo("group_id", "groups")
+	bp.BelongsTo("user_id", "users")
+	bp.Primary("group_id", "user_id")
+	bp.Index("group_members_user_idx").On("user_id")
+	bp.Index("group_members_pair_uq").UniqueOn("group_id", "user_id")
+	if err := schema.ValidateBlueprint(bp); err != nil {
+		t.Fatal(err)
+	}
+	pg, _ := bp.Compile("postgres")
+	if !strings.Contains(pg, "CREATE INDEX IF NOT EXISTS group_members_user_idx ON group_members (user_id);") {
+		t.Fatalf("postgres named index:\n%s", pg)
+	}
+	if !strings.Contains(pg, "CREATE UNIQUE INDEX IF NOT EXISTS group_members_pair_uq ON group_members (group_id, user_id);") {
+		t.Fatalf("postgres unique named index:\n%s", pg)
+	}
+	maria, _ := bp.Compile("mariadb")
+	if !strings.Contains(maria, "CREATE INDEX IF NOT EXISTS group_members_user_idx ON group_members (user_id);") {
+		t.Fatalf("mariadb IF NOT EXISTS:\n%s", maria)
+	}
+	my, _ := bp.Compile("mysql")
+	if !strings.Contains(my, "CREATE INDEX group_members_user_idx ON group_members (user_id);") {
+		t.Fatalf("mysql index:\n%s", my)
+	}
+	if strings.Contains(my, "CREATE INDEX IF NOT EXISTS") || strings.Contains(my, "CREATE UNIQUE INDEX IF NOT EXISTS") {
+		t.Fatalf("mysql indexes must not use IF NOT EXISTS:\n%s", my)
+	}
+}
+
 func TestCompositePrimaryKey(t *testing.T) {
 	bp := schema.NewBlueprint("group_members")
 	bp.BelongsTo("group_id", "groups")

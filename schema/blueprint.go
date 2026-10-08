@@ -8,22 +8,34 @@ import (
 
 // Blueprint is a Laravel-style table definition.
 type Blueprint struct {
-	table   string
-	alter   bool
-	columns []*Column
-	indexes []indexDef
-	primary []string // table-level PRIMARY KEY (composite or single)
-	drops   []string // column names to drop (alter)
-	dropIdx []string // index names to drop (alter)
-	enums   []enumDef
-	rawUp   []string
-	rawDown []string
+	table          string
+	alter          bool
+	columns        []*Column
+	indexes        []indexDef
+	pendingIndexes []*IndexBuilder // Index("col") awaiting flush / On / UniqueOn
+	primary        []string        // table-level PRIMARY KEY (composite or single)
+	drops          []string        // column names to drop (alter)
+	dropIdx        []string        // index names to drop (alter)
+	enums          []enumDef
+	rawUp          []string
+	rawDown        []string
 }
 
 type indexDef struct {
 	name   string
 	cols   []string
 	unique bool
+}
+
+// IndexBuilder is returned by Index for named fluent definitions.
+//
+//	t.Index("group_members_user_idx").On("user_id")
+//	t.Index("group_members_pair_uq").UniqueOn("group_id", "user_id")
+type IndexBuilder struct {
+	bp      *Blueprint
+	name    string
+	done    bool
+	pending bool
 }
 
 type enumDef struct {
@@ -296,21 +308,95 @@ func (b *Blueprint) SoftDeletes() {
 	})
 }
 
-// Index adds a non-unique index.
-func (b *Blueprint) Index(cols ...string) {
-	b.indexes = append(b.indexes, indexDef{
-		name: "idx_" + b.table + "_" + strings.Join(cols, "_"),
-		cols: cols,
-	})
+// Index defines a non-unique index.
+//
+// Column form (auto-named idx_<table>_<cols>):
+//
+//	t.Index("user_id")
+//	t.Index("group_id", "user_id")
+//
+// Named fluent form:
+//
+//	t.Index("group_members_user_idx").On("user_id")
+//	t.Index("group_members_pair_uq").UniqueOn("group_id", "user_id")
+func (b *Blueprint) Index(cols ...string) *IndexBuilder {
+	if len(cols) == 0 {
+		panic("vorm/schema: Index requires a name or column")
+	}
+	if len(cols) >= 2 {
+		b.addIndex(autoIndexName(b.table, cols...), cols, false)
+		return &IndexBuilder{bp: b, done: true}
+	}
+	ib := &IndexBuilder{bp: b, name: cols[0], pending: true}
+	b.pendingIndexes = append(b.pendingIndexes, ib)
+	return ib
 }
 
-// Unique adds a unique index.
+// On finishes a named Index with the given columns (non-unique).
+func (i *IndexBuilder) On(cols ...string) *IndexBuilder {
+	i.commit(cols, false)
+	return i
+}
+
+// UniqueOn finishes a named Index as a UNIQUE index on the given columns.
+func (i *IndexBuilder) UniqueOn(cols ...string) *IndexBuilder {
+	i.commit(cols, true)
+	return i
+}
+
+func (i *IndexBuilder) commit(cols []string, unique bool) {
+	if i == nil || i.bp == nil {
+		panic("vorm/schema: Index builder is nil")
+	}
+	if i.done {
+		panic("vorm/schema: Index already committed")
+	}
+	if len(cols) == 0 {
+		panic("vorm/schema: On/UniqueOn requires at least one column")
+	}
+	name := strings.TrimSpace(i.name)
+	if name == "" || !colIdentRe.MatchString(name) {
+		panic(fmt.Sprintf("vorm/schema: invalid index name %q", i.name))
+	}
+	for _, c := range cols {
+		c = strings.TrimSpace(c)
+		if c == "" || !colIdentRe.MatchString(c) {
+			panic(fmt.Sprintf("vorm/schema: invalid index column %q", c))
+		}
+	}
+	i.bp.addIndex(name, cols, unique)
+	i.done = true
+	i.pending = false
+}
+
+// Unique adds a unique index (auto-named uq_<table>_<cols>).
 func (b *Blueprint) Unique(cols ...string) {
-	b.indexes = append(b.indexes, indexDef{
-		name:   "uq_" + b.table + "_" + strings.Join(cols, "_"),
-		cols:   cols,
-		unique: true,
-	})
+	if len(cols) == 0 {
+		panic("vorm/schema: Unique requires at least one column")
+	}
+	b.addIndex("uq_"+b.table+"_"+strings.Join(cols, "_"), cols, true)
+}
+
+func autoIndexName(table string, cols ...string) string {
+	return "idx_" + table + "_" + strings.Join(cols, "_")
+}
+
+func (b *Blueprint) addIndex(name string, cols []string, unique bool) {
+	b.indexes = append(b.indexes, indexDef{name: name, cols: append([]string(nil), cols...), unique: unique})
+}
+
+// flushPendingIndexes turns bare t.Index("col") into auto-named column indexes.
+func (b *Blueprint) flushPendingIndexes() {
+	for _, ib := range b.pendingIndexes {
+		if ib == nil || ib.done || !ib.pending {
+			continue
+		}
+		col := strings.TrimSpace(ib.name)
+		b.addIndex(autoIndexName(b.table, col), []string{col}, false)
+		ib.done = true
+		ib.pending = false
+	}
+	b.pendingIndexes = nil
 }
 
 // Primary sets a table PRIMARY KEY on one or more columns (Postgres, MySQL,
@@ -406,6 +492,7 @@ func (b *Blueprint) add(c *Column) *Column {
 
 // Compile renders Up/Down SQL for the dialect.
 func (b *Blueprint) Compile(dialect string) (up, down string) {
+	b.flushPendingIndexes()
 	if b.alter {
 		return b.compileAlter(dialect)
 	}
@@ -413,10 +500,10 @@ func (b *Blueprint) Compile(dialect string) (up, down string) {
 }
 
 func (b *Blueprint) compileCreate(dialect string) (string, string) {
-	mysql := dialect == "mysql" || dialect == "mariadb"
+	mysqlFamily := dialect == "mysql" || dialect == "mariadb"
 	var upParts []string
 
-	if !mysql {
+	if !mysqlFamily {
 		for _, e := range b.enums {
 			quoted := quoteEnumValues(e.values)
 			upParts = append(upParts, fmt.Sprintf("CREATE TYPE %s AS ENUM (%s);", e.typeName, quoted))
@@ -433,24 +520,14 @@ func (b *Blueprint) compileCreate(dialect string) (string, string) {
 	upParts = append(upParts, fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n%s\n);", b.table, strings.Join(cols, ",\n")))
 
 	for _, ix := range b.indexes {
-		uq := ""
-		if ix.unique {
-			uq = "UNIQUE "
-		}
-		if mysql {
-			upParts = append(upParts, fmt.Sprintf("CREATE %sINDEX %s ON %s (%s);",
-				uq, ix.name, b.table, strings.Join(ix.cols, ", ")))
-		} else {
-			upParts = append(upParts, fmt.Sprintf("CREATE %sINDEX IF NOT EXISTS %s ON %s (%s);",
-				uq, ix.name, b.table, strings.Join(ix.cols, ", ")))
-		}
+		upParts = append(upParts, createIndexSQL(dialect, b.table, ix))
 	}
 	upParts = append(upParts, b.rawUp...)
 
 	// Down: drop indexes explicitly (MySQL), then table CASCADE (PG), then types/enums.
 	var downParts []string
 	downParts = append(downParts, b.rawDown...)
-	if mysql {
+	if mysqlFamily {
 		for i := len(b.indexes) - 1; i >= 0; i-- {
 			downParts = append(downParts, fmt.Sprintf("DROP INDEX %s ON %s;", b.indexes[i].name, b.table))
 		}
@@ -469,19 +546,34 @@ func (b *Blueprint) compileCreate(dialect string) (string, string) {
 	return strings.Join(upParts, "\n"), strings.Join(downParts, "\n")
 }
 
+// createIndexSQL emits CREATE [UNIQUE] INDEX [IF NOT EXISTS] … for the dialect.
+// Postgres and MariaDB support IF NOT EXISTS; MySQL does not.
+func createIndexSQL(dialect, table string, ix indexDef) string {
+	uq := ""
+	if ix.unique {
+		uq = "UNIQUE "
+	}
+	ifNotExists := ""
+	if dialect == "postgres" || dialect == "mariadb" {
+		ifNotExists = "IF NOT EXISTS "
+	}
+	return fmt.Sprintf("CREATE %sINDEX %s%s ON %s (%s);",
+		uq, ifNotExists, ix.name, table, strings.Join(ix.cols, ", "))
+}
+
 func (b *Blueprint) compileAlter(dialect string) (string, string) {
-	mysql := dialect == "mysql" || dialect == "mariadb"
+	mysqlFamily := dialect == "mysql" || dialect == "mariadb"
 	var ups, downs []string
 	for _, c := range b.columns {
 		ups = append(ups, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s;", b.table, c.sql(dialect)))
-		if mysql {
+		if mysqlFamily {
 			downs = append(downs, fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s;", b.table, c.name))
 		} else {
 			downs = append(downs, fmt.Sprintf("ALTER TABLE %s DROP COLUMN IF EXISTS %s;", b.table, c.name))
 		}
 	}
 	for _, name := range b.drops {
-		if mysql {
+		if mysqlFamily {
 			ups = append(ups, fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s;", b.table, name))
 		} else {
 			ups = append(ups, fmt.Sprintf("ALTER TABLE %s DROP COLUMN IF EXISTS %s;", b.table, name))
@@ -489,7 +581,7 @@ func (b *Blueprint) compileAlter(dialect string) (string, string) {
 		downs = append(downs, fmt.Sprintf("-- re-add %s.%s manually", b.table, name))
 	}
 	for _, name := range b.dropIdx {
-		if mysql {
+		if mysqlFamily {
 			ups = append(ups, fmt.Sprintf("DROP INDEX %s ON %s;", name, b.table))
 		} else {
 			ups = append(ups, fmt.Sprintf("DROP INDEX IF EXISTS %s;", name))
@@ -497,22 +589,17 @@ func (b *Blueprint) compileAlter(dialect string) (string, string) {
 		downs = append(downs, fmt.Sprintf("-- re-create index %s manually", name))
 	}
 	for _, ix := range b.indexes {
-		uq := ""
-		if ix.unique {
-			uq = "UNIQUE "
-		}
-		if mysql {
-			ups = append(ups, fmt.Sprintf("CREATE %sINDEX %s ON %s (%s);", uq, ix.name, b.table, strings.Join(ix.cols, ", ")))
+		ups = append(ups, createIndexSQL(dialect, b.table, ix))
+		if mysqlFamily {
 			downs = append(downs, fmt.Sprintf("DROP INDEX %s ON %s;", ix.name, b.table))
 		} else {
-			ups = append(ups, fmt.Sprintf("CREATE %sINDEX IF NOT EXISTS %s ON %s (%s);", uq, ix.name, b.table, strings.Join(ix.cols, ", ")))
 			downs = append(downs, fmt.Sprintf("DROP INDEX IF EXISTS %s;", ix.name))
 		}
 	}
 	if len(b.primary) > 0 {
 		pkCols := strings.Join(b.primary, ", ")
 		ups = append(ups, fmt.Sprintf("ALTER TABLE %s ADD PRIMARY KEY (%s);", b.table, pkCols))
-		if mysql {
+		if mysqlFamily {
 			downs = append(downs, fmt.Sprintf("ALTER TABLE %s DROP PRIMARY KEY;", b.table))
 		} else {
 			downs = append(downs, fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s_pkey;", b.table, b.table))

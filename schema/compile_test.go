@@ -60,6 +60,34 @@ func TestCompileSourceCreateTable(t *testing.T) {
 	}
 }
 
+func TestCompileSourceNamedIndex(t *testing.T) {
+	src := `package main
+import "github.com/vorzela/vorm/schema"
+func Up(s *schema.Facade) {
+	s.Create("group_members", func(t *schema.Blueprint) {
+		t.BelongsTo("group_id", "groups")
+		t.BelongsTo("user_id", "users")
+		t.Primary("group_id", "user_id")
+		t.Index("group_members_user_idx").On("user_id")
+		t.Index("group_members_pair_uq").UniqueOn("group_id", "user_id")
+	})
+}
+func Down(s *schema.Facade) { s.DropIfExists("group_members") }
+`
+	got, err := schema.CompileSource("members.go", src, "postgres")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"CREATE INDEX IF NOT EXISTS group_members_user_idx ON group_members (user_id);",
+		"CREATE UNIQUE INDEX IF NOT EXISTS group_members_pair_uq ON group_members (group_id, user_id);",
+	} {
+		if !strings.Contains(got.UpSQL, want) {
+			t.Fatalf("missing %q\n%s", want, got.UpSQL)
+		}
+	}
+}
+
 func TestCompileSourceCompositePrimary(t *testing.T) {
 	src := `package main
 import "github.com/vorzela/vorm/schema"
