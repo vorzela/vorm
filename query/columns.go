@@ -59,6 +59,40 @@ func bareColumn(col string) string {
 	return col
 }
 
+// SoftDeleteColumn is the conventional soft-delete timestamp column.
+const SoftDeleteColumn = "deleted_at"
+
+// ProjectColumns returns the SELECT list for a soft-delete-aware query.
+// When the default soft scope filters deleted_at IS NULL, that column is
+// omitted from the projection — returned rows would always have NULL there.
+// WithTrashed and OnlyTrashed keep deleted_at so callers can see it.
+func ProjectColumns(cols []string, softDeletes, withTrashed, onlyTrashed bool) []string {
+	if len(cols) == 0 || !softDeletes || withTrashed || onlyTrashed {
+		return cols
+	}
+	return omitNamedColumn(cols, SoftDeleteColumn)
+}
+
+func omitNamedColumn(cols []string, name string) []string {
+	n := 0
+	for _, c := range cols {
+		if bareColumn(c) != name {
+			n++
+		}
+	}
+	if n == len(cols) {
+		return cols
+	}
+	out := make([]string, 0, n)
+	for _, c := range cols {
+		if bareColumn(c) == name {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
 // HasColumn reports whether col is in Meta.Columns (table.col or bare).
 func (m Meta) HasColumn(col string) bool {
 	bare := bareColumn(col)

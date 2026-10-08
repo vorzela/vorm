@@ -541,7 +541,7 @@ func ByID(ctx context.Context, db query.DB, id int64) (*User, error) {
 `)
 	wants(t, src,
 		`func ByID(ctx context.Context, db query.DB, arg ByIDParams) (*ByIDRow, error)`,
-		`SELECT "id", "email", "name", "active", "age", "created_at", "updated_at", "deleted_at" FROM "users" WHERE "id" = $1 AND "deleted_at" IS NULL LIMIT 1`,
+		`SELECT "id", "email", "name", "active", "age", "created_at", "updated_at" FROM "users" WHERE "id" = $1 AND "deleted_at" IS NULL LIMIT 1`,
 		"db.QueryContext(ctx, byIDSQL, arg.Id)",
 		"return nil, nil",
 	)

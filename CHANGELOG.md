@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.16] — 2026-10-08
+
+### Changed
+
+- Soft-delete reads omit `deleted_at` from the SELECT list when the default
+  scope filters `deleted_at IS NULL` (runtime `Builder` and query codegen).
+  `WithTrashed` / `OnlyTrashed` still project `deleted_at`.
+
 ## [0.2.15] — 2026-10-08
 
 ### Changed

@@ -241,6 +241,8 @@ PostgreSQL-only.
 ```
 
 Default: soft-deleted rows are excluded when `Meta.SoftDeletes` is true.
+Under that scope, `deleted_at` is also omitted from the SELECT list (it would
+always be NULL). `WithTrashed` / `OnlyTrashed` still project `deleted_at`.
 
 ### Eager load / extras
 

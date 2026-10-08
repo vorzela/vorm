@@ -8,13 +8,20 @@ import (
 	"strings"
 )
 
+// projectSelects returns the SELECT column list, omitting deleted_at under the
+// default soft-delete scope (WHERE deleted_at IS NULL).
+func (b *Builder[T]) projectSelects() []string {
+	withTrashed := b.meta.SoftDeletes && !b.soft && !b.onlyTrashed
+	return ProjectColumns(b.selects, b.meta.SoftDeletes, withTrashed, b.onlyTrashed)
+}
+
 // CompileSelect builds SELECT SQL + args. Always uses an explicit column list.
 // Values are bound as parameters ($n / ?); identifiers are validated (no injection via names).
 func (b *Builder[T]) CompileSelect() (sql string, args []any, err error) {
 	if err := b.checkWhereErrors(); err != nil {
 		return "", nil, err
 	}
-	cols := b.selects
+	cols := b.projectSelects()
 	if len(cols) == 0 {
 		return "", nil, fmt.Errorf("vorm/query: no columns selected (refusing SELECT *)")
 	}
@@ -149,7 +156,7 @@ func (b *Builder[T]) CompileSelect() (sql string, args []any, err error) {
 }
 
 func (b *Builder[T]) scanColumns() []string {
-	cols := append([]string(nil), b.selects...)
+	cols := append([]string(nil), b.projectSelects()...)
 	for _, e := range b.extraSelects {
 		cols = append(cols, e.alias)
 	}

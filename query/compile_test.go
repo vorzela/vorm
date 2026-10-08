@@ -74,7 +74,7 @@ func TestCompileFindOptions(t *testing.T) {
 func TestSoftDeleteFilter(t *testing.T) {
 	Users := Model[userRow](Meta{
 		Table:       "users",
-		Columns:     []string{"id", "email"},
+		Columns:     []string{"id", "email", "deleted_at"},
 		SoftDeletes: true,
 	})
 	sql, _, err := Users.Where("email", "a@b.c").CompileSelect()
@@ -83,6 +83,22 @@ func TestSoftDeleteFilter(t *testing.T) {
 	}
 	if !strings.Contains(sql, `"deleted_at" IS NULL`) {
 		t.Fatal(sql)
+	}
+	// Soft scope already guarantees NULL — do not project deleted_at.
+	if strings.Contains(sql, `SELECT "id", "email", "deleted_at"`) {
+		t.Fatalf("soft-scoped SELECT must omit deleted_at:\n%s", sql)
+	}
+	want := `SELECT "id", "email" FROM "users" WHERE "email" = $1 AND "deleted_at" IS NULL`
+	if sql != want {
+		t.Fatalf("got %q want %q", sql, want)
+	}
+
+	sql, _, err = Users.WithTrashed().Where("email", "a@b.c").CompileSelect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sql, `SELECT "id", "email", "deleted_at"`) {
+		t.Fatalf("WithTrashed must project deleted_at:\n%s", sql)
 	}
 }
 

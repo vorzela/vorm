@@ -17,26 +17,24 @@ import (
 
 // ListActiveAdultsRow is the typed result shape for ListActiveAdults (sqlc-style; never SELECT *).
 type ListActiveAdultsRow struct {
-	ID        int64      `json:"id" db:"id"`
-	Email     string     `json:"email" db:"email"`
-	Name      string     `json:"name" db:"name"`
-	Active    bool       `json:"active" db:"active"`
-	Age       int        `json:"age" db:"age"`
-	CreatedAt time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
-	DeletedAt *time.Time `json:"deleted_at" db:"deleted_at"`
+	ID        int64     `json:"id" db:"id"`
+	Email     string    `json:"email" db:"email"`
+	Name      string    `json:"name" db:"name"`
+	Active    bool      `json:"active" db:"active"`
+	Age       int       `json:"age" db:"age"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // GetUserByEmailRow is the typed result shape for GetUserByEmail (sqlc-style; never SELECT *).
 type GetUserByEmailRow struct {
-	ID        int64      `json:"id" db:"id"`
-	Email     string     `json:"email" db:"email"`
-	Name      string     `json:"name" db:"name"`
-	Active    bool       `json:"active" db:"active"`
-	Age       int        `json:"age" db:"age"`
-	CreatedAt time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
-	DeletedAt *time.Time `json:"deleted_at" db:"deleted_at"`
+	ID        int64     `json:"id" db:"id"`
+	Email     string    `json:"email" db:"email"`
+	Name      string    `json:"name" db:"name"`
+	Active    bool      `json:"active" db:"active"`
+	Age       int       `json:"age" db:"age"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // GetUserByEmailParams holds bound arguments for GetUserByEmail (type-safe; never string-concat into SQL).
@@ -46,14 +44,13 @@ type GetUserByEmailParams struct {
 
 // UserByIDRow is the typed result shape for UserByID (sqlc-style; never SELECT *).
 type UserByIDRow struct {
-	ID        int64      `json:"id" db:"id"`
-	Email     string     `json:"email" db:"email"`
-	Name      string     `json:"name" db:"name"`
-	Active    bool       `json:"active" db:"active"`
-	Age       int        `json:"age" db:"age"`
-	CreatedAt time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
-	DeletedAt *time.Time `json:"deleted_at" db:"deleted_at"`
+	ID        int64     `json:"id" db:"id"`
+	Email     string    `json:"email" db:"email"`
+	Name      string    `json:"name" db:"name"`
+	Active    bool      `json:"active" db:"active"`
+	Age       int       `json:"age" db:"age"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // UserByIDParams holds bound arguments for UserByID (type-safe; never string-concat into SQL).
@@ -63,14 +60,13 @@ type UserByIDParams struct {
 
 // GetUserOrFailRow is the typed result shape for GetUserOrFail (sqlc-style; never SELECT *).
 type GetUserOrFailRow struct {
-	ID        int64      `json:"id" db:"id"`
-	Email     string     `json:"email" db:"email"`
-	Name      string     `json:"name" db:"name"`
-	Active    bool       `json:"active" db:"active"`
-	Age       int        `json:"age" db:"age"`
-	CreatedAt time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
-	DeletedAt *time.Time `json:"deleted_at" db:"deleted_at"`
+	ID        int64     `json:"id" db:"id"`
+	Email     string    `json:"email" db:"email"`
+	Name      string    `json:"name" db:"name"`
+	Active    bool      `json:"active" db:"active"`
+	Age       int       `json:"age" db:"age"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // GetUserOrFailParams holds bound arguments for GetUserOrFail (type-safe; never string-concat into SQL).
@@ -80,14 +76,13 @@ type GetUserOrFailParams struct {
 
 // ListUsersByIDsRow is the typed result shape for ListUsersByIDs (sqlc-style; never SELECT *).
 type ListUsersByIDsRow struct {
-	ID        int64      `json:"id" db:"id"`
-	Email     string     `json:"email" db:"email"`
-	Name      string     `json:"name" db:"name"`
-	Active    bool       `json:"active" db:"active"`
-	Age       int        `json:"age" db:"age"`
-	CreatedAt time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
-	DeletedAt *time.Time `json:"deleted_at" db:"deleted_at"`
+	ID        int64     `json:"id" db:"id"`
+	Email     string    `json:"email" db:"email"`
+	Name      string    `json:"name" db:"name"`
+	Active    bool      `json:"active" db:"active"`
+	Age       int       `json:"age" db:"age"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // ListUsersByIDsParams holds bound arguments for ListUsersByIDs (type-safe; never string-concat into SQL).
@@ -97,14 +92,13 @@ type ListUsersByIDsParams struct {
 
 // ListUsersExceptRow is the typed result shape for ListUsersExcept (sqlc-style; never SELECT *).
 type ListUsersExceptRow struct {
-	ID        int64      `json:"id" db:"id"`
-	Email     string     `json:"email" db:"email"`
-	Name      string     `json:"name" db:"name"`
-	Active    bool       `json:"active" db:"active"`
-	Age       int        `json:"age" db:"age"`
-	CreatedAt time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
-	DeletedAt *time.Time `json:"deleted_at" db:"deleted_at"`
+	ID        int64     `json:"id" db:"id"`
+	Email     string    `json:"email" db:"email"`
+	Name      string    `json:"name" db:"name"`
+	Active    bool      `json:"active" db:"active"`
+	Age       int       `json:"age" db:"age"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // ListUsersExceptParams holds bound arguments for ListUsersExcept (type-safe; never string-concat into SQL).
@@ -114,14 +108,13 @@ type ListUsersExceptParams struct {
 
 // ListUsersByStatusRow is the typed result shape for ListUsersByStatus (sqlc-style; never SELECT *).
 type ListUsersByStatusRow struct {
-	ID        int64      `json:"id" db:"id"`
-	Email     string     `json:"email" db:"email"`
-	Name      string     `json:"name" db:"name"`
-	Active    bool       `json:"active" db:"active"`
-	Age       int        `json:"age" db:"age"`
-	CreatedAt time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
-	DeletedAt *time.Time `json:"deleted_at" db:"deleted_at"`
+	ID        int64     `json:"id" db:"id"`
+	Email     string    `json:"email" db:"email"`
+	Name      string    `json:"name" db:"name"`
+	Active    bool      `json:"active" db:"active"`
+	Age       int       `json:"age" db:"age"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // ListTrashedUsersRow is the typed result shape for ListTrashedUsers (sqlc-style; never SELECT *).
@@ -138,26 +131,24 @@ type ListTrashedUsersRow struct {
 
 // ListActiveOrAdultRow is the typed result shape for ListActiveOrAdult (sqlc-style; never SELECT *).
 type ListActiveOrAdultRow struct {
-	ID        int64      `json:"id" db:"id"`
-	Email     string     `json:"email" db:"email"`
-	Name      string     `json:"name" db:"name"`
-	Active    bool       `json:"active" db:"active"`
-	Age       int        `json:"age" db:"age"`
-	CreatedAt time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
-	DeletedAt *time.Time `json:"deleted_at" db:"deleted_at"`
+	ID        int64     `json:"id" db:"id"`
+	Email     string    `json:"email" db:"email"`
+	Name      string    `json:"name" db:"name"`
+	Active    bool      `json:"active" db:"active"`
+	Age       int       `json:"age" db:"age"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // SearchUsersRow is the typed result shape for SearchUsers (sqlc-style; never SELECT *).
 type SearchUsersRow struct {
-	ID        int64      `json:"id" db:"id"`
-	Email     string     `json:"email" db:"email"`
-	Name      string     `json:"name" db:"name"`
-	Active    bool       `json:"active" db:"active"`
-	Age       int        `json:"age" db:"age"`
-	CreatedAt time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
-	DeletedAt *time.Time `json:"deleted_at" db:"deleted_at"`
+	ID        int64     `json:"id" db:"id"`
+	Email     string    `json:"email" db:"email"`
+	Name      string    `json:"name" db:"name"`
+	Active    bool      `json:"active" db:"active"`
+	Age       int       `json:"age" db:"age"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // SearchUsersParams holds bound arguments for SearchUsers (type-safe; never string-concat into SQL).
@@ -168,14 +159,13 @@ type SearchUsersParams struct {
 
 // ListUsersWithPostsRow is the typed result shape for ListUsersWithPosts (sqlc-style; never SELECT *).
 type ListUsersWithPostsRow struct {
-	ID        int64      `json:"id" db:"id"`
-	Email     string     `json:"email" db:"email"`
-	Name      string     `json:"name" db:"name"`
-	Active    bool       `json:"active" db:"active"`
-	Age       int        `json:"age" db:"age"`
-	CreatedAt time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
-	DeletedAt *time.Time `json:"deleted_at" db:"deleted_at"`
+	ID        int64     `json:"id" db:"id"`
+	Email     string    `json:"email" db:"email"`
+	Name      string    `json:"name" db:"name"`
+	Active    bool      `json:"active" db:"active"`
+	Age       int       `json:"age" db:"age"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // UserExistsByEmailParams holds bound arguments for UserExistsByEmail (type-safe; never string-concat into SQL).
@@ -185,14 +175,13 @@ type UserExistsByEmailParams struct {
 
 // PaginateActiveUsersRow is the typed result shape for PaginateActiveUsers (sqlc-style; never SELECT *).
 type PaginateActiveUsersRow struct {
-	ID        int64      `json:"id" db:"id"`
-	Email     string     `json:"email" db:"email"`
-	Name      string     `json:"name" db:"name"`
-	Active    bool       `json:"active" db:"active"`
-	Age       int        `json:"age" db:"age"`
-	CreatedAt time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
-	DeletedAt *time.Time `json:"deleted_at" db:"deleted_at"`
+	ID        int64     `json:"id" db:"id"`
+	Email     string    `json:"email" db:"email"`
+	Name      string    `json:"name" db:"name"`
+	Active    bool      `json:"active" db:"active"`
+	Age       int       `json:"age" db:"age"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // PaginateActiveUsersParams holds bound arguments for PaginateActiveUsers (type-safe; never string-concat into SQL).
@@ -203,14 +192,13 @@ type PaginateActiveUsersParams struct {
 
 // PaginateUsersCursorRow is the typed result shape for PaginateUsersCursor (sqlc-style; never SELECT *).
 type PaginateUsersCursorRow struct {
-	ID        int64      `json:"id" db:"id"`
-	Email     string     `json:"email" db:"email"`
-	Name      string     `json:"name" db:"name"`
-	Active    bool       `json:"active" db:"active"`
-	Age       int        `json:"age" db:"age"`
-	CreatedAt time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
-	DeletedAt *time.Time `json:"deleted_at" db:"deleted_at"`
+	ID        int64     `json:"id" db:"id"`
+	Email     string    `json:"email" db:"email"`
+	Name      string    `json:"name" db:"name"`
+	Active    bool      `json:"active" db:"active"`
+	Age       int       `json:"age" db:"age"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // PaginateUsersCursorParams holds bound arguments for PaginateUsersCursor (type-safe; never string-concat into SQL).
@@ -221,14 +209,13 @@ type PaginateUsersCursorParams struct {
 
 // LockUserForUpdateRow is the typed result shape for LockUserForUpdate (sqlc-style; never SELECT *).
 type LockUserForUpdateRow struct {
-	ID        int64      `json:"id" db:"id"`
-	Email     string     `json:"email" db:"email"`
-	Name      string     `json:"name" db:"name"`
-	Active    bool       `json:"active" db:"active"`
-	Age       int        `json:"age" db:"age"`
-	CreatedAt time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
-	DeletedAt *time.Time `json:"deleted_at" db:"deleted_at"`
+	ID        int64     `json:"id" db:"id"`
+	Email     string    `json:"email" db:"email"`
+	Name      string    `json:"name" db:"name"`
+	Active    bool      `json:"active" db:"active"`
+	Age       int       `json:"age" db:"age"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // LockUserForUpdateParams holds bound arguments for LockUserForUpdate (type-safe; never string-concat into SQL).
@@ -265,19 +252,18 @@ type ForceDeleteUserParams struct {
 
 // ListDistinctActiveEmailsRow is the typed result shape for ListDistinctActiveEmails (sqlc-style; never SELECT *).
 type ListDistinctActiveEmailsRow struct {
-	ID        int64      `json:"id" db:"id"`
-	Email     string     `json:"email" db:"email"`
-	Name      string     `json:"name" db:"name"`
-	Active    bool       `json:"active" db:"active"`
-	Age       int        `json:"age" db:"age"`
-	CreatedAt time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
-	DeletedAt *time.Time `json:"deleted_at" db:"deleted_at"`
+	ID        int64     `json:"id" db:"id"`
+	Email     string    `json:"email" db:"email"`
+	Name      string    `json:"name" db:"name"`
+	Active    bool      `json:"active" db:"active"`
+	Age       int       `json:"age" db:"age"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // ListActiveAdults is generated from // vorm:query in users.go
 func ListActiveAdults(ctx context.Context, db query.DB) ([]ListActiveAdultsRow, error) {
-	const listActiveAdultsSQL = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at", "deleted_at" FROM "users" WHERE "active" = $1 AND "age" > $2 AND "deleted_at" IS NULL ORDER BY "name" ASC LIMIT 10`
+	const listActiveAdultsSQL = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at" FROM "users" WHERE "active" = $1 AND "age" > $2 AND "deleted_at" IS NULL ORDER BY "name" ASC LIMIT 10`
 	rows, err := db.QueryContext(ctx, listActiveAdultsSQL, true, 18)
 	if err != nil {
 		return nil, err
@@ -301,7 +287,7 @@ func ListActiveAdults(ctx context.Context, db query.DB) ([]ListActiveAdultsRow, 
 
 // GetUserByEmail is generated from // vorm:query in users.go
 func GetUserByEmail(ctx context.Context, db query.DB, arg GetUserByEmailParams) (*GetUserByEmailRow, error) {
-	const getUserByEmailSQL = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at", "deleted_at" FROM "users" WHERE "email" = $1 AND "deleted_at" IS NULL LIMIT 1`
+	const getUserByEmailSQL = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at" FROM "users" WHERE "email" = $1 AND "deleted_at" IS NULL LIMIT 1`
 	rows, err := db.QueryContext(ctx, getUserByEmailSQL, arg.Email)
 	if err != nil {
 		return nil, err
@@ -322,7 +308,7 @@ func GetUserByEmail(ctx context.Context, db query.DB, arg GetUserByEmailParams) 
 
 // UserByID is generated from // vorm:query in users.go
 func UserByID(ctx context.Context, db query.DB, arg UserByIDParams) (*UserByIDRow, error) {
-	const userByIDSQL = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at", "deleted_at" FROM "users" WHERE "id" = $1 AND "deleted_at" IS NULL LIMIT 1`
+	const userByIDSQL = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at" FROM "users" WHERE "id" = $1 AND "deleted_at" IS NULL LIMIT 1`
 	rows, err := db.QueryContext(ctx, userByIDSQL, arg.Id)
 	if err != nil {
 		return nil, err
@@ -343,7 +329,7 @@ func UserByID(ctx context.Context, db query.DB, arg UserByIDParams) (*UserByIDRo
 
 // GetUserOrFail is generated from // vorm:query in users.go
 func GetUserOrFail(ctx context.Context, db query.DB, arg GetUserOrFailParams) (*GetUserOrFailRow, error) {
-	const getUserOrFailSQL = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at", "deleted_at" FROM "users" WHERE "id" = $1 AND "deleted_at" IS NULL LIMIT 1`
+	const getUserOrFailSQL = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at" FROM "users" WHERE "id" = $1 AND "deleted_at" IS NULL LIMIT 1`
 	rows, err := db.QueryContext(ctx, getUserOrFailSQL, arg.Id)
 	if err != nil {
 		return nil, err
@@ -366,8 +352,8 @@ func GetUserOrFail(ctx context.Context, db query.DB, arg GetUserOrFailParams) (*
 func ListUsersByIDs(ctx context.Context, db query.DB, arg ListUsersByIDsParams) ([]ListUsersByIDsRow, error) {
 	args := make([]any, 0, len(arg.Ids))
 	var sb strings.Builder
-	sb.Grow(166)
-	sb.WriteString(`SELECT "id", "email", "name", "active", "age", "created_at", "updated_at", "deleted_at" FROM "users" WHERE `)
+	sb.Grow(152)
+	sb.WriteString(`SELECT "id", "email", "name", "active", "age", "created_at", "updated_at" FROM "users" WHERE `)
 	sb.WriteString(query.InClause(query.DialectPostgres, `"id"`, len(args)+1, len(arg.Ids)))
 	for _, v := range arg.Ids {
 		args = append(args, v)
@@ -396,8 +382,8 @@ func ListUsersByIDs(ctx context.Context, db query.DB, arg ListUsersByIDsParams) 
 func ListUsersExcept(ctx context.Context, db query.DB, arg ListUsersExceptParams) ([]ListUsersExceptRow, error) {
 	args := make([]any, 0, 1+len(arg.Ids))
 	var sb strings.Builder
-	sb.Grow(193)
-	sb.WriteString(`SELECT "id", "email", "name", "active", "age", "created_at", "updated_at", "deleted_at" FROM "users" WHERE "active" = $1`)
+	sb.Grow(179)
+	sb.WriteString(`SELECT "id", "email", "name", "active", "age", "created_at", "updated_at" FROM "users" WHERE "active" = $1`)
 	args = append(args, true)
 	sb.WriteString(` AND `)
 	sb.WriteString(query.NotInClause(query.DialectPostgres, `"id"`, len(args)+1, len(arg.Ids)))
@@ -426,7 +412,7 @@ func ListUsersExcept(ctx context.Context, db query.DB, arg ListUsersExceptParams
 
 // ListUsersByStatus is generated from // vorm:query in users.go
 func ListUsersByStatus(ctx context.Context, db query.DB) ([]ListUsersByStatusRow, error) {
-	const listUsersByStatusSQL = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at", "deleted_at" FROM "users" WHERE "age" IN ($1, $2, $3) AND "deleted_at" IS NULL ORDER BY "age" ASC`
+	const listUsersByStatusSQL = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at" FROM "users" WHERE "age" IN ($1, $2, $3) AND "deleted_at" IS NULL ORDER BY "age" ASC`
 	rows, err := db.QueryContext(ctx, listUsersByStatusSQL, 18, 21, 65)
 	if err != nil {
 		return nil, err
@@ -470,7 +456,7 @@ func ListTrashedUsers(ctx context.Context, db query.DB) ([]ListTrashedUsersRow, 
 
 // ListActiveOrAdult is generated from // vorm:query in users.go
 func ListActiveOrAdult(ctx context.Context, db query.DB) ([]ListActiveOrAdultRow, error) {
-	const listActiveOrAdultSQL = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at", "deleted_at" FROM "users" WHERE ("active" = $1 OR "age" >= $2) AND "deleted_at" IS NULL ORDER BY "id" ASC`
+	const listActiveOrAdultSQL = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at" FROM "users" WHERE ("active" = $1 OR "age" >= $2) AND "deleted_at" IS NULL ORDER BY "id" ASC`
 	rows, err := db.QueryContext(ctx, listActiveOrAdultSQL, true, 18)
 	if err != nil {
 		return nil, err
@@ -493,7 +479,7 @@ func ListActiveOrAdult(ctx context.Context, db query.DB) ([]ListActiveOrAdultRow
 // SearchUsers is generated from // vorm:query in users.go
 func SearchUsers(ctx context.Context, db query.DB, arg SearchUsersParams) ([]SearchUsersRow, error) {
 	pattern1 := query.LikePattern(arg.Q)
-	const searchUsersSQL = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at", "deleted_at" FROM "users" WHERE ("name" ILIKE $1 OR "email" ILIKE $2) AND "deleted_at" IS NULL ORDER BY "name" ASC LIMIT $3`
+	const searchUsersSQL = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at" FROM "users" WHERE ("name" ILIKE $1 OR "email" ILIKE $2) AND "deleted_at" IS NULL ORDER BY "name" ASC LIMIT $3`
 	rows, err := db.QueryContext(ctx, searchUsersSQL, pattern1, pattern1, arg.Limit)
 	if err != nil {
 		return nil, err
@@ -515,7 +501,7 @@ func SearchUsers(ctx context.Context, db query.DB, arg SearchUsersParams) ([]Sea
 
 // ListUsersWithPosts is generated from // vorm:query in users.go
 func ListUsersWithPosts(ctx context.Context, db query.DB) ([]ListUsersWithPostsRow, error) {
-	const listUsersWithPostsSQL = `SELECT "users"."id", "users"."email", "users"."name", "users"."active", "users"."age", "users"."created_at", "users"."updated_at", "users"."deleted_at" FROM "users" INNER JOIN "posts" ON posts.user_id = users.id WHERE "users"."active" = $1 AND "users"."deleted_at" IS NULL GROUP BY "users"."id" ORDER BY "users"."name" ASC`
+	const listUsersWithPostsSQL = `SELECT "users"."id", "users"."email", "users"."name", "users"."active", "users"."age", "users"."created_at", "users"."updated_at" FROM "users" INNER JOIN "posts" ON posts.user_id = users.id WHERE "users"."active" = $1 AND "users"."deleted_at" IS NULL GROUP BY "users"."id" ORDER BY "users"."name" ASC`
 	rows, err := db.QueryContext(ctx, listUsersWithPostsSQL, true)
 	if err != nil {
 		return nil, err
@@ -568,7 +554,7 @@ func PaginateActiveUsers(ctx context.Context, db query.DB, arg PaginateActiveUse
 	if page <= 0 {
 		page = 1
 	}
-	const paginateActiveUsersSQL = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at", "deleted_at" FROM "users" WHERE "active" = $1 AND "deleted_at" IS NULL ORDER BY "id" ASC LIMIT $2 OFFSET $3`
+	const paginateActiveUsersSQL = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at" FROM "users" WHERE "active" = $1 AND "deleted_at" IS NULL ORDER BY "id" ASC LIMIT $2 OFFSET $3`
 	rows, err := db.QueryContext(ctx, paginateActiveUsersSQL, true, perPage, (page-1)*perPage)
 	if err != nil {
 		return nil, err
@@ -623,8 +609,8 @@ func PaginateUsersCursor(ctx context.Context, db query.DB, arg PaginateUsersCurs
 			return nil, fmt.Errorf("vorm/query: invalid cursor: %w", err)
 		}
 	}
-	const paginateUsersCursorSQL = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at", "deleted_at" FROM "users" WHERE "deleted_at" IS NULL ORDER BY "id" ASC LIMIT $1`
-	const paginateUsersCursorSQLAfter = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at", "deleted_at" FROM "users" WHERE "id" > $1 AND "deleted_at" IS NULL ORDER BY "id" ASC LIMIT $2`
+	const paginateUsersCursorSQL = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at" FROM "users" WHERE "deleted_at" IS NULL ORDER BY "id" ASC LIMIT $1`
+	const paginateUsersCursorSQLAfter = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at" FROM "users" WHERE "id" > $1 AND "deleted_at" IS NULL ORDER BY "id" ASC LIMIT $2`
 	var rows query.Rows
 	var err error
 	if cursor == "" {
@@ -668,7 +654,7 @@ func PaginateUsersCursor(ctx context.Context, db query.DB, arg PaginateUsersCurs
 
 // LockUserForUpdate is generated from // vorm:query in users.go
 func LockUserForUpdate(ctx context.Context, db query.DB, arg LockUserForUpdateParams) (*LockUserForUpdateRow, error) {
-	const lockUserForUpdateSQL = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at", "deleted_at" FROM "users" WHERE "id" = $1 AND "deleted_at" IS NULL LIMIT 1 FOR UPDATE`
+	const lockUserForUpdateSQL = `SELECT "id", "email", "name", "active", "age", "created_at", "updated_at" FROM "users" WHERE "id" = $1 AND "deleted_at" IS NULL LIMIT 1 FOR UPDATE`
 	rows, err := db.QueryContext(ctx, lockUserForUpdateSQL, arg.Id)
 	if err != nil {
 		return nil, err
@@ -742,7 +728,7 @@ func ForceDeleteUser(ctx context.Context, db query.DB, arg ForceDeleteUserParams
 
 // ListDistinctActiveEmails is generated from // vorm:query in users.go
 func ListDistinctActiveEmails(ctx context.Context, db query.DB) ([]ListDistinctActiveEmailsRow, error) {
-	const listDistinctActiveEmailsSQL = `SELECT DISTINCT "id", "email", "name", "active", "age", "created_at", "updated_at", "deleted_at" FROM "users" WHERE "active" = $1 AND "deleted_at" IS NULL ORDER BY "email" ASC`
+	const listDistinctActiveEmailsSQL = `SELECT DISTINCT "id", "email", "name", "active", "age", "created_at", "updated_at" FROM "users" WHERE "active" = $1 AND "deleted_at" IS NULL ORDER BY "email" ASC`
 	rows, err := db.QueryContext(ctx, listDistinctActiveEmailsSQL, true)
 	if err != nil {
 		return nil, err
@@ -764,43 +750,43 @@ func ListDistinctActiveEmails(ctx context.Context, db query.DB) ([]ListDistinctA
 
 func scanListActiveAdultsRow(rows query.Rows) (ListActiveAdultsRow, error) {
 	var row ListActiveAdultsRow
-	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt, &row.DeletedAt)
+	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt)
 	return row, err
 }
 
 func scanGetUserByEmailRow(rows query.Rows) (GetUserByEmailRow, error) {
 	var row GetUserByEmailRow
-	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt, &row.DeletedAt)
+	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt)
 	return row, err
 }
 
 func scanUserByIDRow(rows query.Rows) (UserByIDRow, error) {
 	var row UserByIDRow
-	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt, &row.DeletedAt)
+	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt)
 	return row, err
 }
 
 func scanGetUserOrFailRow(rows query.Rows) (GetUserOrFailRow, error) {
 	var row GetUserOrFailRow
-	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt, &row.DeletedAt)
+	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt)
 	return row, err
 }
 
 func scanListUsersByIDsRow(rows query.Rows) (ListUsersByIDsRow, error) {
 	var row ListUsersByIDsRow
-	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt, &row.DeletedAt)
+	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt)
 	return row, err
 }
 
 func scanListUsersExceptRow(rows query.Rows) (ListUsersExceptRow, error) {
 	var row ListUsersExceptRow
-	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt, &row.DeletedAt)
+	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt)
 	return row, err
 }
 
 func scanListUsersByStatusRow(rows query.Rows) (ListUsersByStatusRow, error) {
 	var row ListUsersByStatusRow
-	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt, &row.DeletedAt)
+	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt)
 	return row, err
 }
 
@@ -812,42 +798,42 @@ func scanListTrashedUsersRow(rows query.Rows) (ListTrashedUsersRow, error) {
 
 func scanListActiveOrAdultRow(rows query.Rows) (ListActiveOrAdultRow, error) {
 	var row ListActiveOrAdultRow
-	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt, &row.DeletedAt)
+	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt)
 	return row, err
 }
 
 func scanSearchUsersRow(rows query.Rows) (SearchUsersRow, error) {
 	var row SearchUsersRow
-	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt, &row.DeletedAt)
+	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt)
 	return row, err
 }
 
 func scanListUsersWithPostsRow(rows query.Rows) (ListUsersWithPostsRow, error) {
 	var row ListUsersWithPostsRow
-	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt, &row.DeletedAt)
+	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt)
 	return row, err
 }
 
 func scanPaginateActiveUsersRow(rows query.Rows) (PaginateActiveUsersRow, error) {
 	var row PaginateActiveUsersRow
-	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt, &row.DeletedAt)
+	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt)
 	return row, err
 }
 
 func scanPaginateUsersCursorRow(rows query.Rows) (PaginateUsersCursorRow, error) {
 	var row PaginateUsersCursorRow
-	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt, &row.DeletedAt)
+	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt)
 	return row, err
 }
 
 func scanLockUserForUpdateRow(rows query.Rows) (LockUserForUpdateRow, error) {
 	var row LockUserForUpdateRow
-	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt, &row.DeletedAt)
+	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt)
 	return row, err
 }
 
 func scanListDistinctActiveEmailsRow(rows query.Rows) (ListDistinctActiveEmailsRow, error) {
 	var row ListDistinctActiveEmailsRow
-	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt, &row.DeletedAt)
+	err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Active, &row.Age, &row.CreatedAt, &row.UpdatedAt)
 	return row, err
 }

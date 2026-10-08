@@ -306,6 +306,7 @@ n, err := models.Users.Where("id", id).ForceDelete(ctx, db)  // real DELETE
 ```
 
 Soft-deleted rows are excluded automatically; `WithTrashed()` includes them.
+Default soft-scoped SELECTs omit `deleted_at` (it would always be NULL).
 
 Filters:
 

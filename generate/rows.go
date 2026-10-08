@@ -3,17 +3,24 @@ package generate
 import (
 	"fmt"
 	"strings"
+
+	"github.com/vorzela/vorm/query"
 )
 
 // resultCols returns the columns projected by a SELECT stub.
+// Under the default soft-delete scope (deleted_at IS NULL), deleted_at is
+// omitted — matching query.Builder / ProjectColumns.
 func resultCols(st StubFunc, ms ModelSpec) []string {
-	if len(st.Selects) > 0 {
-		return st.Selects
+	var cols []string
+	switch {
+	case len(st.Selects) > 0:
+		cols = st.Selects
+	case len(ms.Columns) > 0:
+		cols = ms.Columns
+	default:
+		return nil
 	}
-	if len(ms.Columns) > 0 {
-		return ms.Columns
-	}
-	return nil
+	return query.ProjectColumns(cols, ms.SoftDeletes, st.WithTrashed, st.OnlyTrashed)
 }
 
 // userParams returns stub params excluding ctx/db (and Beginner).
