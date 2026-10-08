@@ -562,7 +562,7 @@ Used in `migrations/<ts>_*.go`. `vorm migrate` compiles `Up`/`Down` to SQL and
 ```go
 //go:build ignore
 
-package migrations
+package main
 
 import "github.com/vorzela/vorm/schema"
 

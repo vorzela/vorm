@@ -16,7 +16,7 @@ never executes the functions (that would write extra files and AutoMigrate).
 ```go
 //go:build ignore
 
-package migrations
+package main
 
 import "github.com/vorzela/vorm/schema"
 

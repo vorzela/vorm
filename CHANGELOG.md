@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.17] — 2026-10-08
+
+### Changed
+
+- `vorm make migration` / relation scaffolds emit `package main` (with
+  `//go:build ignore`) instead of `package migrations`, matching the
+  conventional migration file package.
+
 ## [0.2.16] — 2026-10-08
 
 ### Changed

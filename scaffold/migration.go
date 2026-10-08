@@ -168,7 +168,7 @@ type pivotHint struct {
 func createSource(table string) string {
 	return fmt.Sprintf(`//go:build ignore
 
-package migrations
+package main
 
 import "github.com/vorzela/vorm/schema"
 
@@ -205,7 +205,7 @@ func pivotSource(p *pivotHint) string {
 	}
 	return fmt.Sprintf(`//go:build ignore
 
-package migrations
+package main
 
 import "github.com/vorzela/vorm/schema"
 
@@ -225,7 +225,7 @@ func alterSource(table string) string {
 	}
 	return fmt.Sprintf(`//go:build ignore
 
-package migrations
+package main
 
 import "github.com/vorzela/vorm/schema"
 
@@ -249,7 +249,7 @@ func alterAddSource(table, column string) string {
 	}
 	return fmt.Sprintf(`//go:build ignore
 
-package migrations
+package main
 
 import "github.com/vorzela/vorm/schema"
 
@@ -273,7 +273,7 @@ func alterDropSource(table, column string) string {
 	}
 	return fmt.Sprintf(`//go:build ignore
 
-package migrations
+package main
 
 import "github.com/vorzela/vorm/schema"
 

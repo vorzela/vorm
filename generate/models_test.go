@@ -14,7 +14,7 @@ func TestGenerateModelsFromBlueprint(t *testing.T) {
 	schemaDir := filepath.Join(root, "schema")
 	modelDir := filepath.Join(root, "models")
 	os.MkdirAll(schemaDir, 0o755)
-	src := `package migrations
+	src := `package main
 import "github.com/vorzela/vorm/schema"
 func CreatePostsTable(s *schema.Facade) error {
 	return s.Create("posts", func(t *schema.Blueprint) {
@@ -58,7 +58,7 @@ func TestGenerateModelsBlueprintJSONImport(t *testing.T) {
 	schemaDir := filepath.Join(root, "schema")
 	modelDir := filepath.Join(root, "models")
 	os.MkdirAll(schemaDir, 0o755)
-	src := `package migrations
+	src := `package main
 import "github.com/vorzela/vorm/schema"
 func CreateItemsTable(s *schema.Facade) error {
 	return s.Create("items", func(t *schema.Blueprint) {
@@ -88,7 +88,7 @@ func TestGenerateModelsBlueprintColumnHelpers(t *testing.T) {
 	schemaDir := filepath.Join(root, "schema")
 	modelDir := filepath.Join(root, "models")
 	os.MkdirAll(schemaDir, 0o755)
-	src := `package migrations
+	src := `package main
 import "github.com/vorzela/vorm/schema"
 func CreateWidgetsTable(s *schema.Facade) error {
 	return s.Create("widgets", func(t *schema.Blueprint) {

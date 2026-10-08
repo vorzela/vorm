@@ -202,7 +202,7 @@ func belongsToSource(child, parent, col, references string, unique bool) string 
 	}
 	return fmt.Sprintf(`//go:build ignore
 
-package migrations
+package main
 
 import "github.com/vorzela/vorm/schema"
 
@@ -225,7 +225,7 @@ func morphsSource(child, name string) string {
 	idx := indexName(child, name+"_type", name+"_id")
 	return fmt.Sprintf(`//go:build ignore
 
-package migrations
+package main
 
 import "github.com/vorzela/vorm/schema"
 
@@ -253,7 +253,7 @@ func morphToManySource(related, morph, pivot, references string) string {
 	}
 	return fmt.Sprintf(`//go:build ignore
 
-package migrations
+package main
 
 import "github.com/vorzela/vorm/schema"
 

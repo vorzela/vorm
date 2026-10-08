@@ -9,7 +9,7 @@ import (
 
 const createPostsSrc = `//go:build ignore
 
-package migrations
+package main
 
 import "github.com/vorzela/vorm/schema"
 
@@ -61,7 +61,7 @@ func TestCompileSourceCreateTable(t *testing.T) {
 }
 
 func TestCompileSourceBelongsToMany(t *testing.T) {
-	src := `package migrations
+	src := `package main
 import "github.com/vorzela/vorm/schema"
 func Up(s *schema.Facade) { s.BelongsToMany("posts", "tags") }
 func Down(s *schema.Facade) { s.DropIfExists("post_tag") }
@@ -82,7 +82,7 @@ func Down(s *schema.Facade) { s.DropIfExists("post_tag") }
 }
 
 func TestCompileSourceAlterTable(t *testing.T) {
-	src := `package migrations
+	src := `package main
 import "github.com/vorzela/vorm/schema"
 func Up(s *schema.Facade) {
 	s.Table("posts", func(t *schema.Blueprint) {
@@ -108,7 +108,7 @@ func Down(s *schema.Facade) {
 }
 
 func TestCompileSourceUnknownMethod(t *testing.T) {
-	src := `package migrations
+	src := `package main
 import "github.com/vorzela/vorm/schema"
 func Up(s *schema.Facade) {
 	s.Create("x", func(t *schema.Blueprint) { t.Nope("x") })
@@ -121,7 +121,7 @@ func Up(s *schema.Facade) {
 }
 
 func TestCompileSourceMissingUp(t *testing.T) {
-	src := `package migrations
+	src := `package main
 func Down(s *schema.Facade) {}
 `
 	_, err := schema.CompileSource("no_up.go", src, "postgres")
@@ -131,7 +131,7 @@ func Down(s *schema.Facade) {}
 }
 
 func TestCompileSourceMorphToMany(t *testing.T) {
-	src := `package migrations
+	src := `package main
 import "github.com/vorzela/vorm/schema"
 func Up(s *schema.Facade) { s.MorphToMany("tags", "taggable") }
 func Down(s *schema.Facade) { s.DropIfExists("taggables") }
@@ -153,7 +153,7 @@ func Down(s *schema.Facade) { s.DropIfExists("taggables") }
 }
 
 func TestCompileSourceCustomType(t *testing.T) {
-	src := `package migrations
+	src := `package main
 import "github.com/vorzela/vorm/schema"
 func Up(s *schema.Facade) {
 	s.Create("places", func(t *schema.Blueprint) {
@@ -189,7 +189,7 @@ func Down(s *schema.Facade) { s.DropIfExists("places") }
 }
 
 func TestCompileSourcePostgresColumnHelpers(t *testing.T) {
-	src := `package migrations
+	src := `package main
 import "github.com/vorzela/vorm/schema"
 func Up(s *schema.Facade) {
 	s.Create("widgets", func(t *schema.Blueprint) {
@@ -264,7 +264,7 @@ func Down(s *schema.Facade) { s.DropIfExists("widgets") }
 }
 
 func TestCompileSourceCustomTypeRejects(t *testing.T) {
-	missing := `package migrations
+	missing := `package main
 import "github.com/vorzela/vorm/schema"
 func Up(s *schema.Facade) {
 	s.Create("places", func(t *schema.Blueprint) {
@@ -275,7 +275,7 @@ func Up(s *schema.Facade) {
 	if _, err := schema.CompileSource("bad.go", missing, "postgres"); err == nil {
 		t.Fatal("CustomType without Column should fail")
 	}
-	injected := `package migrations
+	injected := `package main
 import "github.com/vorzela/vorm/schema"
 func Up(s *schema.Facade) {
 	s.Create("places", func(t *schema.Blueprint) {
@@ -289,7 +289,7 @@ func Up(s *schema.Facade) {
 }
 
 func TestCompileSourceUUID(t *testing.T) {
-	src := `package migrations
+	src := `package main
 import "github.com/vorzela/vorm/schema"
 func Up(s *schema.Facade) {
 	s.Create("accounts", func(t *schema.Blueprint) {
@@ -328,7 +328,7 @@ func Down(s *schema.Facade) { s.DropIfExists("accounts") }
 }
 
 func TestCompileSourceDoesNotExecuteFacade(t *testing.T) {
-	src := `package migrations
+	src := `package main
 import "github.com/vorzela/vorm/schema"
 func Up(s *schema.Facade) {
 	s.Create("only_in_memory", func(t *schema.Blueprint) { t.ID() })

@@ -26,8 +26,8 @@ func TestDiscover(t *testing.T) {
 	writeFile(t, dir, "enums.sql", "-- enums\n")
 	writeFile(t, dir, "notes.md", "hello\n")
 	writeFile(t, dir, "400_not_sql.txt", "SELECT 5;\n")
-	writeFile(t, dir, "150_create_go.go", "package migrations\n")
-	writeFile(t, dir, "160_ignored_test.go", "package migrations\n")
+	writeFile(t, dir, "150_create_go.go", "package main\n")
+	writeFile(t, dir, "160_ignored_test.go", "package main\n")
 	writeFile(t, dir, EnumsHashFile, "deadbeef")
 	if err := os.Mkdir(filepath.Join(dir, "500_subdir.sql"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)

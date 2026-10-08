@@ -111,7 +111,7 @@ func TestLintGoMigration(t *testing.T) {
 	}
 
 	bad := filepath.Join(dir, "1700000001_bad.go")
-	if err := os.WriteFile(bad, []byte(`package migrations
+	if err := os.WriteFile(bad, []byte(`package main
 import "github.com/vorzela/vorm/schema"
 func Up(s *schema.Facade) {
 	s.Create("x", func(t *schema.Blueprint) { t.Nope("x") })

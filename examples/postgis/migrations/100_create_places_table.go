@@ -1,6 +1,6 @@
 //go:build ignore
 
-package migrations
+package main
 
 import "github.com/vorzela/vorm/schema"
 
