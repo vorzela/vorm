@@ -37,6 +37,17 @@ func TestBelongsToAndPivot(t *testing.T) {
 	if !strings.Contains(posts, "user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE") {
 		t.Fatalf("belongsTo FK missing:\n%s", posts)
 	}
+
+	if err := f.Create("orders", func(t *schema.Blueprint) {
+		t.ID()
+		t.BelongsTo("user_id", "uuid", "users")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	orders := readOne(t, dir, "create_orders")
+	if !strings.Contains(orders, "user_id BIGINT NOT NULL REFERENCES users(uuid) ON DELETE CASCADE") {
+		t.Fatalf("belongsTo custom parent column missing:\n%s", orders)
+	}
 	pivot := readOne(t, dir, "create_post_tag")
 	if !strings.Contains(pivot, "post_id") || !strings.Contains(pivot, "tag_id") {
 		t.Fatalf("pivot:\n%s", pivot)

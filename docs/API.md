@@ -49,7 +49,7 @@ vorm config keys
 vorm config lint [vorm.yaml]
 
 vorm make migration <name>          # create | pivot (post_tag) | alter (add_<col>_to_<table>)
-vorm make belongs-to <child> <parent> [column]
+vorm make belongs-to <child> <parent> [column] [references]
 vorm make has-one <parent> <child> [column]
 vorm make has-many <parent> <child> [column]
 vorm make belongs-to-many <left> <right>
@@ -572,7 +572,8 @@ func Up(s *schema.Facade) {
 		t.Boolean("active").Default(true)
 		t.Integer("age").Nullable()
 		t.ForeignId("user_id").Constrained("users").CascadeOnDelete()
-		t.BelongsTo("editor_id", "users") // BIGINT FK, ON DELETE CASCADE
+		t.BelongsTo("editor_id", "users")            // → users(id)
+		t.BelongsTo("owner_id", "uuid", "users")     // → users(uuid)
 		t.Enum("status", "draft", "published")
 		t.Morphs("commentable")
 		t.UUID("public_id")
@@ -638,7 +639,10 @@ func Down(s *schema.Facade) {
 | `Inet` | Postgres `INET` / MySQL `VARCHAR(45)` |
 | `ForeignID` / `ForeignId` | `BIGINT NOT NULL` |
 | `ForeignIDNullable` | nullable FK |
-| `BelongsTo(col, table)` | constrained FK, cascade delete |
+| `BelongsTo(col, table)` | constrained FK → `table(id)`, cascade delete |
+| `BelongsTo(col, parentCol, table)` | constrained FK → `table(parentCol)` |
+| `HasMany(col, table[, parentCol])` | same as BelongsTo (child-side FK) |
+| `HasOne(col, table[, parentCol])` | BelongsTo + unique index on `col` |
 | `Morphs(name)` | `{name}_type` + `{name}_id` + index |
 | `CustomType(sqlType).Column(name)` | extension or dialect type (`citext`, PostGIS, …), written through unchanged |
 | `Enum(col, values...)` | PG type / MySQL ENUM |
@@ -663,7 +667,7 @@ t.UUID("public_id").Unique()
 ### Column chain
 
 `Column(name)` (after `CustomType` only), `Primary()`, `Nullable()`, `NotNull()`, `Unique()`, `Default(v)`, `DefaultCurrent()`,
-`Constrained(table)`, `References(table, column)`,
+`Constrained(table)`, `Constrained(table, column)`, `References(table, column)`,
 `CascadeOnDelete()`, `RestrictOnDelete()`, `NullOnDelete()`,
 `CascadeOnUpdate()`.
 

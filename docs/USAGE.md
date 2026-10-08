@@ -183,8 +183,9 @@ vorm make migration drop_phone_from_users
 create:
 
 ```bash
-vorm make belongs-to posts users          # posts.user_id → users
+vorm make belongs-to posts users          # posts.user_id → users(id)
 vorm make belongs-to posts users author_id
+vorm make belongs-to posts users author_id uuid  # posts.author_id → users(uuid)
 vorm make has-one users profiles          # unique profiles.user_id
 vorm make has-many users posts            # same FK as belongs-to, from the parent side
 vorm make belongs-to-many posts tags      # s.BelongsToMany("posts", "tags")

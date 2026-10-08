@@ -183,10 +183,57 @@ func (b *Blueprint) ForeignIDNullable(name string) *Column {
 
 // BelongsTo adds a constrained FK (many-to-one). Default ON DELETE CASCADE.
 //
-//	t.BelongsTo("user_id", "users")
-//	t.BelongsTo("user_id", "users").RestrictOnDelete() // if you need the column back
-func (b *Blueprint) BelongsTo(column, table string) *Column {
-	return b.ForeignID(column).Constrained(table)
+// Two forms:
+//
+//	t.BelongsTo("user_id", "users")                 // REFERENCES users(id)
+//	t.BelongsTo("user_id", "uuid", "users")         // REFERENCES users(uuid)
+//
+//	t.BelongsTo("user_id", "users").RestrictOnDelete()
+func (b *Blueprint) BelongsTo(column string, refs ...string) *Column {
+	table, foreignCol := parseRelationRefs("BelongsTo", refs)
+	return b.ForeignID(column).References(table, foreignCol)
+}
+
+// HasMany is BelongsTo with the same optional parent-column form. Use it on the
+// child table when documenting a has-many from the parent side.
+//
+//	t.HasMany("user_id", "users")
+//	t.HasMany("user_id", "uuid", "users")
+func (b *Blueprint) HasMany(column string, refs ...string) *Column {
+	table, foreignCol := parseRelationRefs("HasMany", refs)
+	return b.ForeignID(column).References(table, foreignCol)
+}
+
+// HasOne is BelongsTo plus a unique index on the FK (child side of has-one).
+//
+//	t.HasOne("user_id", "users")
+//	t.HasOne("user_id", "uuid", "users")
+func (b *Blueprint) HasOne(column string, refs ...string) *Column {
+	c := b.HasMany(column, refs...)
+	b.Unique(column)
+	return c
+}
+
+// parseRelationRefs accepts either (table) or (foreignColumn, table).
+// Default referenced column is "id".
+func parseRelationRefs(method string, refs []string) (table, foreignCol string) {
+	foreignCol = "id"
+	switch len(refs) {
+	case 1:
+		table = strings.TrimSpace(refs[0])
+	case 2:
+		foreignCol = strings.TrimSpace(refs[0])
+		table = strings.TrimSpace(refs[1])
+		if foreignCol == "" {
+			foreignCol = "id"
+		}
+	default:
+		panic(fmt.Sprintf("vorm/schema: %s(column, table) or %s(column, foreignColumn, table)", method, method))
+	}
+	if table == "" {
+		panic(fmt.Sprintf("vorm/schema: %s requires a non-empty table name", method))
+	}
+	return table, foreignCol
 }
 
 // sqlTypeRe accepts a type name, an optional schema qualifier, and one

@@ -51,6 +51,7 @@ same job with explicit names:
 
 ```bash
 vorm make belongs-to posts users          # alter posts: t.BelongsTo("user_id", "users")
+vorm make belongs-to posts users author_id uuid  # t.BelongsTo("author_id", "uuid", "users")
 vorm make has-one users profiles          # unique FK on profiles
 vorm make has-many users posts            # FK on posts (inverse of belongs-to)
 vorm make belongs-to-many posts tags      # pivot table

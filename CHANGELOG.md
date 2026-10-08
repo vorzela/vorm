@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.14] — 2026-10-08
+
+### Added
+
+- Optional parent column on relationship FKs:
+  `t.BelongsTo("user_id", "uuid", "users")` → `REFERENCES users(uuid)`
+  (two-arg form still defaults to `id`).
+- `t.HasMany` / `t.HasOne` Blueprint helpers with the same optional parent
+  column (`HasOne` also adds a unique index).
+- `Constrained(table, column)` optional second arg; `BelongsToMany` /
+  `MorphToMany` accept optional referenced parent columns.
+- CLI: `vorm make belongs-to|has-one|has-many … [column] [references]`,
+  `belongs-to-many … [left_ref] [right_ref]`,
+  `morph-to-many … [references]`.
+
 ## [0.2.13] — 2026-10-06
 
 ### Fixed

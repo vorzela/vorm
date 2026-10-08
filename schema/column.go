@@ -112,18 +112,20 @@ func (c *Column) DefaultCurrent() *Column {
 	return c
 }
 
-// Constrained sets REFERENCES table(id). Default ON DELETE CASCADE.
-func (c *Column) Constrained(table string) *Column {
+// Constrained sets REFERENCES table(id). Optional second arg is the parent column.
+// Default ON DELETE CASCADE.
+//
+//	t.ForeignID("user_id").Constrained("users")
+//	t.ForeignID("user_id").Constrained("users", "uuid")
+func (c *Column) Constrained(table string, column ...string) *Column {
 	if table == "" {
 		panic("vorm/schema: Constrained(table) requires a non-empty table name")
 	}
-	c.foreignTable = table
-	c.foreignColumn = "id"
-	c.nullable = false
-	if c.onDelete == "" {
-		c.onDelete = "CASCADE"
+	col := "id"
+	if len(column) > 0 && strings.TrimSpace(column[0]) != "" {
+		col = strings.TrimSpace(column[0])
 	}
-	return c
+	return c.References(table, col)
 }
 
 // References sets REFERENCES table(column).

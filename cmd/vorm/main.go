@@ -232,12 +232,12 @@ func cmdMake(args []string) error {
 const makeUsage = `usage: vorm make <target> …
 
   vorm make migration <posts|post_user|add_slug_to_posts>
-  vorm make belongs-to <child> <parent> [column]
-  vorm make has-one <parent> <child> [column]
-  vorm make has-many <parent> <child> [column]
-  vorm make belongs-to-many <left> <right>
+  vorm make belongs-to <child> <parent> [column] [references]
+  vorm make has-one <parent> <child> [column] [references]
+  vorm make has-many <parent> <child> [column] [references]
+  vorm make belongs-to-many <left> <right> [left_ref] [right_ref]
   vorm make morphs <child> <name>
-  vorm make morph-to-many <related> <morph>
+  vorm make morph-to-many <related> <morph> [references]
   vorm make enum <type> value1,value2
   vorm make extension <name>`
 
@@ -502,6 +502,7 @@ Migrations:
   vorm make migration posts         # timestamped Blueprint Up/Down in migrations/
   vorm make migration add_slug_to_posts  # alter: t.String("slug") / DropColumn
   vorm make belongs-to posts users  # alter: t.BelongsTo("user_id", "users")
+  vorm make belongs-to posts users author_id uuid  # → users(uuid)
   vorm make has-one users profiles  # unique FK on the child
   vorm make has-many users posts    # FK on the child (same as belongs-to)
   vorm make belongs-to-many posts tags

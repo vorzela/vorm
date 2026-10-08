@@ -50,3 +50,29 @@ func TestForeignKeyOnDelete(t *testing.T) {
 		t.Fatal(up2)
 	}
 }
+
+func TestBelongsToOptionalParentColumn(t *testing.T) {
+	bp := schema.NewBlueprint("posts")
+	bp.BelongsTo("author_id", "uuid", "users")
+	up, _ := bp.Compile("postgres")
+	if !strings.Contains(up, "author_id BIGINT NOT NULL REFERENCES users(uuid) ON DELETE CASCADE") {
+		t.Fatal(up)
+	}
+
+	bp2 := schema.NewBlueprint("profiles")
+	bp2.HasOne("user_id", "users")
+	up2, _ := bp2.Compile("postgres")
+	if !strings.Contains(up2, "REFERENCES users(id)") {
+		t.Fatal(up2)
+	}
+	if !strings.Contains(up2, "UNIQUE") && !strings.Contains(up2, "uq_profiles_user_id") {
+		t.Fatal(up2)
+	}
+
+	bp3 := schema.NewBlueprint("posts")
+	bp3.ForeignId("user_id").Constrained("users", "uuid")
+	up3, _ := bp3.Compile("postgres")
+	if !strings.Contains(up3, "REFERENCES users(uuid)") {
+		t.Fatal(up3)
+	}
+}

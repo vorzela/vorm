@@ -224,7 +224,15 @@ func compileFacadeCall(filename string, call *ast.CallExpr, dialect string) (up,
 		if err != nil {
 			return "", "", fmt.Errorf("schema: %s: BelongsToMany needs right table: %w", filename, err)
 		}
-		bp := NewPivotBlueprint(left, right)
+		var parentCols []string
+		for i := 2; i < len(call.Args) && i < 4; i++ {
+			ref, err := stringLiteral(call.Args, i)
+			if err != nil {
+				return "", "", fmt.Errorf("schema: %s: BelongsToMany parent column must be a string literal: %w", filename, err)
+			}
+			parentCols = append(parentCols, ref)
+		}
+		bp := NewPivotBlueprint(left, right, parentCols...)
 		if err := ValidateBlueprint(bp); err != nil {
 			return "", "", err
 		}
@@ -239,7 +247,15 @@ func compileFacadeCall(filename string, call *ast.CallExpr, dialect string) (up,
 		if err != nil {
 			return "", "", fmt.Errorf("schema: %s: MorphToMany needs morph name: %w", filename, err)
 		}
-		bp := NewMorphPivotBlueprint(related, morph)
+		var relatedRef []string
+		if len(call.Args) >= 3 {
+			ref, err := stringLiteral(call.Args, 2)
+			if err != nil {
+				return "", "", fmt.Errorf("schema: %s: MorphToMany references must be a string literal: %w", filename, err)
+			}
+			relatedRef = append(relatedRef, ref)
+		}
+		bp := NewMorphPivotBlueprint(related, morph, relatedRef...)
 		if err := ValidateBlueprint(bp); err != nil {
 			return "", "", err
 		}
@@ -548,16 +564,26 @@ func applyRoot(filename string, bp *Blueprint, root callStep) (*Column, error) {
 			return nil, fmt.Errorf("schema: %s: ForeignIDNullable needs a column name", filename)
 		}
 		return bp.ForeignIDNullable(name), nil
-	case "BelongsTo":
+	case "BelongsTo", "HasMany", "HasOne":
 		col, err := stringLiteral(root.args, 0)
 		if err != nil {
-			return nil, fmt.Errorf("schema: %s: BelongsTo needs a column name", filename)
+			return nil, fmt.Errorf("schema: %s: %s needs a column name", filename, root.name)
 		}
-		table, err := stringLiteral(root.args, 1)
+		refs, err := stringLiteralsFrom(root.args, 1)
 		if err != nil {
-			return nil, fmt.Errorf("schema: %s: BelongsTo needs a table name", filename)
+			return nil, fmt.Errorf("schema: %s: %s args must be string literals: %w", filename, root.name, err)
 		}
-		return bp.BelongsTo(col, table), nil
+		if len(refs) < 1 || len(refs) > 2 {
+			return nil, fmt.Errorf("schema: %s: %s(column, table) or %s(column, foreignColumn, table)", filename, root.name, root.name)
+		}
+		switch root.name {
+		case "HasOne":
+			return bp.HasOne(col, refs...), nil
+		case "HasMany":
+			return bp.HasMany(col, refs...), nil
+		default:
+			return bp.BelongsTo(col, refs...), nil
+		}
 	case "Enum":
 		col, err := stringLiteral(root.args, 0)
 		if err != nil {
@@ -686,6 +712,14 @@ func applyColumnMethod(filename string, col *Column, step callStep) error {
 			}
 			table = Pluralize(strings.TrimSuffix(col.name, "_id"))
 		}
+		if len(step.args) >= 2 {
+			parentCol, err := stringLiteral(step.args, 1)
+			if err != nil {
+				return fmt.Errorf("schema: %s: Constrained parent column must be a string literal", filename)
+			}
+			col.Constrained(table, parentCol)
+			return nil
+		}
 		col.Constrained(table)
 		return nil
 	case "References":
@@ -736,8 +770,15 @@ func stringLiteral(args []ast.Expr, i int) (string, error) {
 }
 
 func stringLiterals(args []ast.Expr) ([]string, error) {
-	out := make([]string, 0, len(args))
-	for i := range args {
+	return stringLiteralsFrom(args, 0)
+}
+
+func stringLiteralsFrom(args []ast.Expr, start int) ([]string, error) {
+	if start > len(args) {
+		start = len(args)
+	}
+	out := make([]string, 0, len(args)-start)
+	for i := start; i < len(args); i++ {
 		s, err := stringLiteral(args, i)
 		if err != nil {
 			return nil, err

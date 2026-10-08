@@ -162,6 +162,7 @@ func parseAlter(name string) (table, column, action string) {
 
 type pivotHint struct {
 	LeftTable, RightTable string
+	LeftRef, RightRef     string // optional referenced columns (default id)
 }
 
 func createSource(table string) string {
@@ -191,6 +192,17 @@ func Down(s *schema.Facade) {
 }
 
 func pivotSource(p *pivotHint) string {
+	call := fmt.Sprintf("%q, %q", p.LeftTable, p.RightTable)
+	if p.LeftRef != "" || p.RightRef != "" {
+		leftRef, rightRef := p.LeftRef, p.RightRef
+		if leftRef == "" {
+			leftRef = "id"
+		}
+		if rightRef == "" {
+			rightRef = "id"
+		}
+		call = fmt.Sprintf("%q, %q, %q, %q", p.LeftTable, p.RightTable, leftRef, rightRef)
+	}
 	return fmt.Sprintf(`//go:build ignore
 
 package migrations
@@ -198,13 +210,13 @@ package migrations
 import "github.com/vorzela/vorm/schema"
 
 func Up(s *schema.Facade) {
-	s.BelongsToMany(%q, %q)
+	s.BelongsToMany(%s)
 }
 
 func Down(s *schema.Facade) {
 	s.DropIfExists(%q)
 }
-`, p.LeftTable, p.RightTable, schemaPivotName(p.LeftTable, p.RightTable))
+`, call, schemaPivotName(p.LeftTable, p.RightTable))
 }
 
 func alterSource(table string) string {

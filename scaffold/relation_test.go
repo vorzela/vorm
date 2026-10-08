@@ -53,6 +53,25 @@ func TestMakeBelongsToCustomColumn(t *testing.T) {
 	}
 }
 
+func TestMakeBelongsToCustomColumnAndReferences(t *testing.T) {
+	dir := t.TempDir()
+	res, err := scaffold.MakeRelation("belongs-to", []string{"posts", "users", "author_id", "uuid"}, scaffold.MigrationDirs{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := readFile(t, res.MigrationFile)
+	if !strings.Contains(body, `t.BelongsTo("author_id", "uuid", "users")`) {
+		t.Fatal(body)
+	}
+	got, err := schema.CompileFile(res.MigrationFile, "postgres")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got.UpSQL, "REFERENCES users(uuid)") {
+		t.Fatalf("compiled Up:\n%s", got.UpSQL)
+	}
+}
+
 func TestMakeHasOneAddsUnique(t *testing.T) {
 	dir := t.TempDir()
 	res, err := scaffold.MakeRelation("has-one", []string{"users", "profiles"}, scaffold.MigrationDirs{Dir: dir})

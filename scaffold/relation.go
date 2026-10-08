@@ -66,56 +66,48 @@ func relationSpec(kind string, args []string) (relSpec, error) {
 	switch kind {
 	case "belongs-to":
 		if len(args) < 2 {
-			return relSpec{}, fmt.Errorf("usage: vorm make belongs-to <child> <parent> [column]")
+			return relSpec{}, fmt.Errorf("usage: vorm make belongs-to <child> <parent> [column] [references]")
 		}
 		child, parent := tableIdent(args[0]), tableIdent(args[1])
-		col := fkColumn(parent)
-		if len(args) >= 3 && strings.TrimSpace(args[2]) != "" {
-			col = snakeName(args[2])
-		}
+		col, references := relationColumnArgs(parent, args[2:])
 		return relSpec{
 			filename: "add_" + col + "_to_" + child + "_table.go",
 			table:    child,
-			body:     belongsToSource(child, parent, col, false),
+			body:     belongsToSource(child, parent, col, references, false),
 		}, nil
 	case "has-many":
 		if len(args) < 2 {
-			return relSpec{}, fmt.Errorf("usage: vorm make has-many <parent> <child> [column]")
+			return relSpec{}, fmt.Errorf("usage: vorm make has-many <parent> <child> [column] [references]")
 		}
 		parent, child := tableIdent(args[0]), tableIdent(args[1])
-		col := fkColumn(parent)
-		if len(args) >= 3 && strings.TrimSpace(args[2]) != "" {
-			col = snakeName(args[2])
-		}
+		col, references := relationColumnArgs(parent, args[2:])
 		return relSpec{
 			filename: "add_" + col + "_to_" + child + "_table.go",
 			table:    child,
-			body:     belongsToSource(child, parent, col, false),
+			body:     belongsToSource(child, parent, col, references, false),
 		}, nil
 	case "has-one":
 		if len(args) < 2 {
-			return relSpec{}, fmt.Errorf("usage: vorm make has-one <parent> <child> [column]")
+			return relSpec{}, fmt.Errorf("usage: vorm make has-one <parent> <child> [column] [references]")
 		}
 		parent, child := tableIdent(args[0]), tableIdent(args[1])
-		col := fkColumn(parent)
-		if len(args) >= 3 && strings.TrimSpace(args[2]) != "" {
-			col = snakeName(args[2])
-		}
+		col, references := relationColumnArgs(parent, args[2:])
 		return relSpec{
 			filename: "add_" + col + "_to_" + child + "_table.go",
 			table:    child,
-			body:     belongsToSource(child, parent, col, true),
+			body:     belongsToSource(child, parent, col, references, true),
 		}, nil
 	case "belongs-to-many":
 		if len(args) < 2 {
-			return relSpec{}, fmt.Errorf("usage: vorm make belongs-to-many <left> <right>")
+			return relSpec{}, fmt.Errorf("usage: vorm make belongs-to-many <left> <right> [left_ref] [right_ref]")
 		}
 		left, right := tableIdent(args[0]), tableIdent(args[1])
 		pivot := schema.PivotName(left, right)
+		leftRef, rightRef := optionalRef(args, 2), optionalRef(args, 3)
 		return relSpec{
 			filename: "create_" + pivot + "_table.go",
 			table:    pivot,
-			body:     pivotSource(&pivotHint{LeftTable: left, RightTable: right}),
+			body:     pivotSource(&pivotHint{LeftTable: left, RightTable: right, LeftRef: leftRef, RightRef: rightRef}),
 		}, nil
 	case "morphs":
 		if len(args) < 2 {
@@ -133,22 +125,41 @@ func relationSpec(kind string, args []string) (relSpec, error) {
 		}, nil
 	case "morph-to-many":
 		if len(args) < 2 {
-			return relSpec{}, fmt.Errorf("usage: vorm make morph-to-many <related> <morph>")
+			return relSpec{}, fmt.Errorf("usage: vorm make morph-to-many <related> <morph> [references]")
 		}
 		related := tableIdent(args[0])
 		morph := snakeName(args[1])
 		if morph == "" {
-			return relSpec{}, fmt.Errorf("usage: vorm make morph-to-many <related> <morph>")
+			return relSpec{}, fmt.Errorf("usage: vorm make morph-to-many <related> <morph> [references]")
 		}
 		pivot := schema.Pluralize(morph)
 		return relSpec{
 			filename: "create_" + pivot + "_table.go",
 			table:    pivot,
-			body:     morphToManySource(related, morph, pivot),
+			body:     morphToManySource(related, morph, pivot, optionalRef(args, 2)),
 		}, nil
 	default:
 		return relSpec{}, fmt.Errorf("unknown relation %q — try belongs-to, has-one, has-many, belongs-to-many, morphs, morph-to-many", kind)
 	}
+}
+
+// relationColumnArgs parses optional [column] [references] after the two tables.
+func relationColumnArgs(parentTable string, rest []string) (col, references string) {
+	col = fkColumn(parentTable)
+	if len(rest) >= 1 && strings.TrimSpace(rest[0]) != "" {
+		col = snakeName(rest[0])
+	}
+	if len(rest) >= 2 && strings.TrimSpace(rest[1]) != "" {
+		references = snakeName(rest[1])
+	}
+	return col, references
+}
+
+func optionalRef(args []string, i int) string {
+	if len(args) <= i {
+		return ""
+	}
+	return snakeName(args[i])
 }
 
 func tableIdent(s string) string {
@@ -172,14 +183,22 @@ func indexName(table string, cols ...string) string {
 	return "idx_" + table + "_" + strings.Join(cols, "_")
 }
 
-func belongsToSource(child, parent, col string, unique bool) string {
+func belongsToSource(child, parent, col, references string, unique bool) string {
 	upExtra := ""
 	downIndex := ""
-	comment := fmt.Sprintf("%s belongsTo %s via %s.%s", child, parent, child, col)
+	parentCol := "id"
+	if references != "" {
+		parentCol = references
+	}
+	comment := fmt.Sprintf("%s belongsTo %s via %s.%s → %s.%s", child, parent, child, col, parent, parentCol)
 	if unique {
 		upExtra = fmt.Sprintf("\n\t\tt.Unique(%q)", col)
 		downIndex = fmt.Sprintf("\t\tt.DropIndex(%q)\n", uniqueIndexName(child, col))
-		comment = fmt.Sprintf("%s hasOne %s via unique %s.%s", parent, child, child, col)
+		comment = fmt.Sprintf("%s hasOne %s via unique %s.%s → %s.%s", parent, child, child, col, parent, parentCol)
+	}
+	belongsCall := fmt.Sprintf("t.BelongsTo(%q, %q)", col, parent)
+	if references != "" && references != "id" {
+		belongsCall = fmt.Sprintf("t.BelongsTo(%q, %q, %q)", col, references, parent)
 	}
 	return fmt.Sprintf(`//go:build ignore
 
@@ -190,7 +209,7 @@ import "github.com/vorzela/vorm/schema"
 // %s
 func Up(s *schema.Facade) {
 	s.Table(%q, func(t *schema.Blueprint) {
-		t.BelongsTo(%q, %q)%s
+		%s%s
 	})
 }
 
@@ -199,7 +218,7 @@ func Down(s *schema.Facade) {
 %s		t.DropColumn(%q)
 	})
 }
-`, comment, child, col, parent, upExtra, child, downIndex, col)
+`, comment, child, belongsCall, upExtra, child, downIndex, col)
 }
 
 func morphsSource(child, name string) string {
@@ -227,7 +246,11 @@ func Down(s *schema.Facade) {
 `, child, name, child, child, name, child, idx, name+"_type", name+"_id")
 }
 
-func morphToManySource(related, morph, pivot string) string {
+func morphToManySource(related, morph, pivot, references string) string {
+	call := fmt.Sprintf("%q, %q", related, morph)
+	if references != "" && references != "id" {
+		call = fmt.Sprintf("%q, %q, %q", related, morph, references)
+	}
 	return fmt.Sprintf(`//go:build ignore
 
 package migrations
@@ -235,11 +258,11 @@ package migrations
 import "github.com/vorzela/vorm/schema"
 
 func Up(s *schema.Facade) {
-	s.MorphToMany(%q, %q)
+	s.MorphToMany(%s)
 }
 
 func Down(s *schema.Facade) {
 	s.DropIfExists(%q)
 }
-`, related, morph, pivot)
+`, call, pivot)
 }
