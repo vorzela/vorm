@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.18] — 2026-10-09
+
+### Added
+
+- `t.Primary("group_id", "user_id")` table primary key helper (Postgres,
+  MySQL, MariaDB). Panics / validate-errors if another primary key is
+  already defined (`t.ID()`, column `.Primary()`, or a prior `Primary`).
+
 ## [0.2.17] — 2026-10-08
 
 ### Changed

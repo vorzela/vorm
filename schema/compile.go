@@ -640,6 +640,18 @@ func applyRoot(filename string, bp *Blueprint, root callStep) (*Column, error) {
 		}
 		bp.Unique(cols...)
 		return nil, nil
+	case "Primary":
+		if len(root.args) == 0 {
+			return nil, fmt.Errorf("schema: %s: Blueprint.Primary needs column names (column.Primary() is chained)", filename)
+		}
+		cols, err := stringLiterals(root.args)
+		if err != nil {
+			return nil, fmt.Errorf("schema: %s: Primary needs column names", filename)
+		}
+		if err := bp.setPrimary(cols...); err != nil {
+			return nil, fmt.Errorf("schema: %s: %v", filename, err)
+		}
+		return nil, nil
 	case "DropColumn":
 		name, err := stringLiteral(root.args, 0)
 		if err != nil {

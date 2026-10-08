@@ -60,6 +60,43 @@ func TestCompileSourceCreateTable(t *testing.T) {
 	}
 }
 
+func TestCompileSourceCompositePrimary(t *testing.T) {
+	src := `package main
+import "github.com/vorzela/vorm/schema"
+func Up(s *schema.Facade) {
+	s.Create("group_members", func(t *schema.Blueprint) {
+		t.BelongsTo("group_id", "groups")
+		t.BelongsTo("user_id", "users")
+		t.Primary("group_id", "user_id")
+	})
+}
+func Down(s *schema.Facade) { s.DropIfExists("group_members") }
+`
+	got, err := schema.CompileSource("members.go", src, "postgres")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got.UpSQL, "PRIMARY KEY (group_id, user_id)") {
+		t.Fatalf("Up missing composite PK:\n%s", got.UpSQL)
+	}
+
+	conflict := `package main
+import "github.com/vorzela/vorm/schema"
+func Up(s *schema.Facade) {
+	s.Create("group_members", func(t *schema.Blueprint) {
+		t.ID()
+		t.BelongsTo("group_id", "groups")
+		t.BelongsTo("user_id", "users")
+		t.Primary("group_id", "user_id")
+	})
+}
+func Down(s *schema.Facade) { s.DropIfExists("group_members") }
+`
+	if _, err := schema.CompileSource("bad.go", conflict, "postgres"); err == nil {
+		t.Fatal("expected error when Primary conflicts with ID")
+	}
+}
+
 func TestCompileSourceBelongsToMany(t *testing.T) {
 	src := `package main
 import "github.com/vorzela/vorm/schema"

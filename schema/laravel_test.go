@@ -1,6 +1,7 @@
 package schema_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -49,6 +50,57 @@ func TestForeignKeyOnDelete(t *testing.T) {
 	if !strings.Contains(up2, "ON DELETE SET NULL") || !strings.Contains(up2, "user_id BIGINT NULL") {
 		t.Fatal(up2)
 	}
+}
+
+func TestCompositePrimaryKey(t *testing.T) {
+	bp := schema.NewBlueprint("group_members")
+	bp.BelongsTo("group_id", "groups")
+	bp.BelongsTo("user_id", "users")
+	bp.String("role").Default("member")
+	bp.Primary("group_id", "user_id")
+	if err := schema.ValidateBlueprint(bp); err != nil {
+		t.Fatal(err)
+	}
+	for _, dialect := range []string{"postgres", "mysql", "mariadb"} {
+		up, _ := bp.Compile(dialect)
+		if !strings.Contains(up, "PRIMARY KEY (group_id, user_id)") {
+			t.Fatalf("%s missing composite PK:\n%s", dialect, up)
+		}
+		if strings.Contains(up, "BIGSERIAL PRIMARY KEY") || strings.Contains(up, "AUTO_INCREMENT PRIMARY KEY") {
+			t.Fatalf("%s should not have surrogate id PK:\n%s", dialect, up)
+		}
+	}
+}
+
+func TestPrimaryConflictsWithID(t *testing.T) {
+	bp := schema.NewBlueprint("group_members")
+	bp.ID()
+	bp.BelongsTo("group_id", "groups")
+	bp.BelongsTo("user_id", "users")
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic when Primary follows ID")
+		}
+		msg := fmt.Sprint(r)
+		if !strings.Contains(msg, "primary key already") {
+			t.Fatalf("unexpected panic: %v", r)
+		}
+	}()
+	bp.Primary("group_id", "user_id")
+}
+
+func TestIDConflictsWithPrimary(t *testing.T) {
+	bp := schema.NewBlueprint("group_members")
+	bp.BelongsTo("group_id", "groups")
+	bp.BelongsTo("user_id", "users")
+	bp.Primary("group_id", "user_id")
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic when ID follows Primary")
+		}
+	}()
+	bp.ID()
 }
 
 func TestDefaultAutoQuotesStringsAndJSON(t *testing.T) {

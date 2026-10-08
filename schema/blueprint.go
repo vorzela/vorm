@@ -12,6 +12,7 @@ type Blueprint struct {
 	alter   bool
 	columns []*Column
 	indexes []indexDef
+	primary []string // table-level PRIMARY KEY (composite or single)
 	drops   []string // column names to drop (alter)
 	dropIdx []string // index names to drop (alter)
 	enums   []enumDef
@@ -45,6 +46,7 @@ func (b *Blueprint) TableName() string { return b.table }
 
 // ID adds a bigserial / bigint auto-increment primary key named id.
 func (b *Blueprint) ID() *Column {
+	b.mustAllowColumnPrimary("id")
 	return b.add(newColumn("id").primary().autoIncrement())
 }
 
@@ -53,6 +55,7 @@ func (b *Blueprint) Id() *Column { return b.ID() }
 
 // BigIncrements is an alias of ID with a custom name.
 func (b *Blueprint) BigIncrements(name string) *Column {
+	b.mustAllowColumnPrimary(name)
 	return b.add(newColumn(name).primary().autoIncrement())
 }
 
@@ -310,6 +313,72 @@ func (b *Blueprint) Unique(cols ...string) {
 	})
 }
 
+// Primary sets a table PRIMARY KEY on one or more columns (Postgres, MySQL,
+// MariaDB). Panics if a primary key is already defined via t.ID(),
+// column.Primary(), BigIncrements, or a prior Primary(...).
+//
+//	t.BelongsTo("group_id", "groups")
+//	t.BelongsTo("user_id", "users")
+//	t.Primary("group_id", "user_id")
+func (b *Blueprint) Primary(cols ...string) {
+	if err := b.setPrimary(cols...); err != nil {
+		panic(err.Error())
+	}
+}
+
+func (b *Blueprint) setPrimary(cols ...string) error {
+	if len(cols) == 0 {
+		return &Error{Op: "validate", Table: b.table, Hint: "Primary requires at least one column"}
+	}
+	if err := b.errIfPrimaryTaken(""); err != nil {
+		return err
+	}
+	out := make([]string, 0, len(cols))
+	for _, c := range cols {
+		c = strings.TrimSpace(c)
+		if c == "" {
+			return &Error{Op: "validate", Table: b.table, Hint: "Primary column name must be non-empty"}
+		}
+		if !colIdentRe.MatchString(c) {
+			return &Error{Op: "validate", Table: b.table, Hint: fmt.Sprintf("invalid Primary column %q", c)}
+		}
+		out = append(out, c)
+	}
+	b.primary = out
+	return nil
+}
+
+func (b *Blueprint) mustAllowColumnPrimary(name string) {
+	if err := b.errIfPrimaryTaken(name); err != nil {
+		panic(err.Error())
+	}
+}
+
+// errIfPrimaryTaken reports whether a primary key is already defined.
+// whenColumn is the column about to become primary (for clearer errors).
+func (b *Blueprint) errIfPrimaryTaken(whenColumn string) error {
+	if len(b.primary) > 0 {
+		hint := fmt.Sprintf("primary key already set on (%s)", strings.Join(b.primary, ", "))
+		if whenColumn != "" {
+			hint += fmt.Sprintf("; cannot also make %q primary", whenColumn)
+		}
+		return &Error{Op: "validate", Table: b.table, Hint: hint}
+	}
+	for _, c := range b.columns {
+		if !c.isPrimary {
+			continue
+		}
+		hint := fmt.Sprintf("primary key already defined on column %q", c.name)
+		if whenColumn != "" {
+			hint += fmt.Sprintf("; cannot also make %q primary", whenColumn)
+		} else {
+			hint += " (remove t.ID() / .Primary() before t.Primary(...))"
+		}
+		return &Error{Op: "validate", Table: b.table, Hint: hint}
+	}
+	return nil
+}
+
 // DropColumn marks a column for drop (alter migrations).
 func (b *Blueprint) DropColumn(name string) {
 	b.drops = append(b.drops, name)
@@ -357,6 +426,9 @@ func (b *Blueprint) compileCreate(dialect string) (string, string) {
 	var cols []string
 	for _, c := range b.columns {
 		cols = append(cols, "    "+c.sql(dialect))
+	}
+	if len(b.primary) > 0 {
+		cols = append(cols, "    PRIMARY KEY ("+strings.Join(b.primary, ", ")+")")
 	}
 	upParts = append(upParts, fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n%s\n);", b.table, strings.Join(cols, ",\n")))
 
@@ -435,6 +507,15 @@ func (b *Blueprint) compileAlter(dialect string) (string, string) {
 		} else {
 			ups = append(ups, fmt.Sprintf("CREATE %sINDEX IF NOT EXISTS %s ON %s (%s);", uq, ix.name, b.table, strings.Join(ix.cols, ", ")))
 			downs = append(downs, fmt.Sprintf("DROP INDEX IF EXISTS %s;", ix.name))
+		}
+	}
+	if len(b.primary) > 0 {
+		pkCols := strings.Join(b.primary, ", ")
+		ups = append(ups, fmt.Sprintf("ALTER TABLE %s ADD PRIMARY KEY (%s);", b.table, pkCols))
+		if mysql {
+			downs = append(downs, fmt.Sprintf("ALTER TABLE %s DROP PRIMARY KEY;", b.table))
+		} else {
+			downs = append(downs, fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s_pkey;", b.table, b.table))
 		}
 	}
 	ups = append(ups, b.rawUp...)

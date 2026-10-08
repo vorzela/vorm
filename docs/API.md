@@ -651,6 +651,7 @@ func Down(s *schema.Facade) {
 | `Timestamps()` / `TimestampsTz()` | `created_at`, `updated_at` (`TIMESTAMPTZ` on Postgres) |
 | `SoftDeletes()` | `deleted_at` + index |
 | `Index` / `Unique` | indexes |
+| `Primary(cols...)` | table PRIMARY KEY (composite OK); errors if another PK exists |
 | `DropColumn` / `DropIndex` | alter down |
 | `Raw(up, down)` | dialect SQL appended as-is |
 
