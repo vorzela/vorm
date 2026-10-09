@@ -145,16 +145,33 @@ func (b *Builder[T]) compileExistsSQL(ea existsArg, placeholder func() string) (
 }
 
 // WhereHas keeps rows that have at least one matching related row (correlated EXISTS).
+// Prefer the shorter Has alias in new code.
 func (b *Builder[T]) WhereHas(name string) *Builder[T] {
 	return b.whereHasRel(name, false, pred{})
 }
 
+// Has is WhereHas — keep rows that have matching related rows.
+//
+//	Groups.Has("users")
+func (b *Builder[T]) Has(name string) *Builder[T] {
+	return b.WhereHas(name)
+}
+
 // WhereDoesntHave is the inverse of WhereHas.
+// Prefer the shorter Missing alias in new code.
 func (b *Builder[T]) WhereDoesntHave(name string) *Builder[T] {
 	return b.whereHasRel(name, true, pred{})
 }
 
+// Missing is WhereDoesntHave — keep rows with no matching related rows.
+//
+//	Groups.Missing("users")
+func (b *Builder[T]) Missing(name string) *Builder[T] {
+	return b.WhereDoesntHave(name)
+}
+
 // WhereRelation is WhereHas plus a predicate on the related table.
+// Prefer the shorter Filter alias in new code.
 func (b *Builder[T]) WhereRelation(name, col string, args ...any) *Builder[T] {
 	p, err := parseWhere(append([]any{col}, args...)...)
 	if err != nil {
@@ -162,6 +179,14 @@ func (b *Builder[T]) WhereRelation(name, col string, args ...any) *Builder[T] {
 		return b
 	}
 	return b.whereHasRel(name, false, p)
+}
+
+// Filter keeps parent rows that match a related record (EXISTS via the relation).
+// Prefer this over Join when you only need to filter, not select pivot columns.
+//
+//	Groups.Filter("users", "id", userID)
+func (b *Builder[T]) Filter(name, col string, args ...any) *Builder[T] {
+	return b.WhereRelation(name, col, args...)
 }
 
 func (b *Builder[T]) whereHasRel(name string, not bool, extra pred) *Builder[T] {

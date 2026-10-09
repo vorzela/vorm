@@ -341,6 +341,17 @@ func TestWhereHasAndWithCountSQL(t *testing.T) {
 		t.Fatalf("args=%v", args)
 	}
 
+	sql, args, err = Users.Has("posts").Filter("posts", "state", "published").CompileSelect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sql, `EXISTS (SELECT 1 FROM "posts" WHERE "posts"."user_id" = "users"."id"`) {
+		t.Fatalf("Has/Filter: %s", sql)
+	}
+	if !strings.Contains(sql, `"posts"."state" = $1`) || len(args) != 1 || args[0] != "published" {
+		t.Fatalf("Has/Filter args=%v sql=%s", args, sql)
+	}
+
 	sql, _, err = Users.WithCount("posts").CompileSelect()
 	if err != nil {
 		t.Fatal(err)

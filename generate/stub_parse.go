@@ -1210,7 +1210,7 @@ func lowerBuilderCall(name string, call *ast.CallExpr, st *StubFunc, models map[
 		st.Havings = append([]WhereSpec{w}, st.Havings...)
 		return true
 
-	case "WhereHas", "WhereDoesntHave":
+	case "WhereHas", "WhereDoesntHave", "Has", "Missing":
 		if len(args) != 1 {
 			st.PendingWhy = name + " closures stay on the runtime builder"
 			return false
@@ -1223,23 +1223,23 @@ func lowerBuilderCall(name string, call *ast.CallExpr, st *StubFunc, models map[
 		st.Wheres = prependWhere(st.Wheres, WhereSpec{
 			Kind:    WhereExists,
 			RelName: rel,
-			Not:     name == "WhereDoesntHave",
+			Not:     name == "WhereDoesntHave" || name == "Missing",
 		})
 		return true
 
-	case "WhereRelation":
+	case "WhereRelation", "Filter":
 		if len(args) < 2 {
-			st.PendingWhy = "WhereRelation needs a relation and a predicate"
+			st.PendingWhy = name + " needs a relation and a predicate"
 			return false
 		}
 		rel, ok := litString(args[0])
 		if !ok {
-			st.PendingWhy = "WhereRelation needs a literal relation name"
+			st.PendingWhy = name + " needs a literal relation name"
 			return false
 		}
 		extra, ok := parseWhereCall(args[1:], models)
 		if !ok {
-			st.PendingWhy = "WhereRelation predicate must be a column form"
+			st.PendingWhy = name + " predicate must be a column form"
 			return false
 		}
 		extra.Kind = WhereExists

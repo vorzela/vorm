@@ -211,7 +211,7 @@ func (e *Entity[T]) Distinct() *Builder[T] {
 	return e.New().Distinct()
 }
 
-// Join starts with an INNER JOIN.
+// Join starts with an INNER JOIN (raw SQL). Prefer Filter/Has for relations.
 func (e *Entity[T]) Join(table, on string) *Builder[T] {
 	return e.New().Join(table, on)
 }
@@ -226,14 +226,29 @@ func (e *Entity[T]) WhereHas(name string) *Builder[T] {
 	return e.New().WhereHas(name)
 }
 
+// Has is WhereHas.
+func (e *Entity[T]) Has(name string) *Builder[T] {
+	return e.New().Has(name)
+}
+
 // WhereDoesntHave is the inverse of WhereHas.
 func (e *Entity[T]) WhereDoesntHave(name string) *Builder[T] {
 	return e.New().WhereDoesntHave(name)
 }
 
+// Missing is WhereDoesntHave.
+func (e *Entity[T]) Missing(name string) *Builder[T] {
+	return e.New().Missing(name)
+}
+
 // WhereRelation is WhereHas plus a predicate on the related table.
 func (e *Entity[T]) WhereRelation(name, col string, args ...any) *Builder[T] {
 	return e.New().WhereRelation(name, col, args...)
+}
+
+// Filter is WhereRelation — filter parents by a related column.
+func (e *Entity[T]) Filter(name, col string, args ...any) *Builder[T] {
+	return e.New().Filter(name, col, args...)
 }
 
 // WithCount adds a `{name}_count` subquery column.

@@ -30,7 +30,9 @@ func (b *Builder[T]) OrderByDesc(col string) *Builder[T] {
 	return b.OrderBy(col, "DESC")
 }
 
-// Join adds INNER JOIN table ON on.
+// Join adds INNER JOIN table ON on (raw SQL escape hatch).
+// Prefer Filter / Has / Missing for relation filters — those use EXISTS and
+// never duplicate parent rows (no Distinct needed).
 //
 //	Users.Join("posts", "posts.user_id = users.id").Select("users.id", "users.email")
 func (b *Builder[T]) Join(table, on string) *Builder[T] {
