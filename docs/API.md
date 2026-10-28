@@ -233,6 +233,12 @@ PostgreSQL-only.
 .SkipLocked()
 ```
 
+`GroupBy` must cover the projection: group every selected column, or group by
+the table's primary key (which covers that table's other columns). Narrow the
+projection with `Select(...)` when you only need the grouped keys. An
+uncovered projection is rejected at compile/generate time instead of producing
+SQL that the database rejects.
+
 ### Soft deletes
 
 ```go

@@ -49,6 +49,54 @@ func TestCompileDistinctOnGroupBy(t *testing.T) {
 	}
 }
 
+func TestWhereAcceptsTypedColumn(t *testing.T) {
+	Users := Model[struct{}](Meta{Table: "users", Columns: []string{"id", "email"}})
+	sql, args, err := Users.New().
+		Where(Col("email"), "a@b.c").
+		OrWhere(Col("id"), 7).
+		CompileSelect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sql, `"email" = $1`) || !strings.Contains(sql, `OR "id" = $2`) {
+		t.Fatalf("typed Col where:\n%s", sql)
+	}
+	if len(args) != 2 || args[0] != "a@b.c" || args[1] != 7 {
+		t.Fatalf("args=%v", args)
+	}
+}
+
+func TestGroupByRequiresCoveredProjection(t *testing.T) {
+	Users := Model[struct{}](Meta{
+		Table:      "users",
+		Columns:    []string{"id", "team_id", "age"},
+		PrimaryKey: "id",
+	})
+
+	_, _, err := Users.New().GroupBy("team_id").CompileSelect()
+	if err == nil || !strings.Contains(err.Error(), "does not cover") {
+		t.Fatalf("expected uncovered GROUP BY error, got %v", err)
+	}
+
+	sql, _, err := Users.New().Select("team_id").GroupBy("team_id").CompileSelect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sql, `SELECT "team_id" FROM "users" GROUP BY "team_id"`) {
+		t.Fatalf("narrowed group by:\n%s", sql)
+	}
+
+	// Grouping by the primary key covers the rest of that table's columns.
+	sql, _, err = Users.New().GroupBy("id").CompileSelect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sql, `SELECT "id", "team_id", "age"`) ||
+		!strings.Contains(sql, `GROUP BY "id"`) {
+		t.Fatalf("primary-key group by:\n%s", sql)
+	}
+}
+
 func TestHavingAllowsAggregateExpressions(t *testing.T) {
 	Users := Model[struct{}](Meta{Table: "users", Columns: []string{"id", "team_id", "age"}})
 	sql, args, err := Users.New().
@@ -67,6 +115,7 @@ func TestHavingAllowsAggregateExpressions(t *testing.T) {
 	}
 
 	sql, args, err = Users.New().
+		Select("team_id").
 		GroupBy("team_id").
 		Having("SUM(age)", ">", 100).
 		CompileSelect()
@@ -89,6 +138,7 @@ func TestHavingAllowsAggregateExpressions(t *testing.T) {
 func TestHavingRaw(t *testing.T) {
 	Users := Model[struct{}](Meta{Table: "users", Columns: []string{"id", "team_id"}})
 	sql, args, err := Users.New().
+		Select("team_id").
 		GroupBy("team_id").
 		HavingRaw("COUNT(*) >= ? AND COUNT(*) < ?", 5, 10).
 		CompileSelect()

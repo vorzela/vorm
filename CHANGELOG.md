@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `Where` / `OrWhere` / `Having` accept typed `query.Col` column keys at
+  runtime (`Where(models.Users.Col.Email, email)`), not just plain strings.
+- `GROUP BY` now validates that the projection is covered by the grouping (or
+  functionally dependent on a grouped primary key) in the runtime builder and
+  query codegen. Uncovered projections fail with an actionable error instead of
+  emitting SQL that Postgres/MySQL reject.
+
 ## [0.2.19] — 2026-10-09
 
 ### Added

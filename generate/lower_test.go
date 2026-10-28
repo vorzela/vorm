@@ -295,6 +295,38 @@ func Busy(ctx context.Context, db query.DB, min int64) ([]User, error) {
 	wants(t, src, `HAVING (COUNT(*) > $1)`)
 }
 
+func TestLowerRejectsUncoveredGroupByProjection(t *testing.T) {
+	root := t.TempDir()
+	qdir := filepath.Join(root, "queries")
+	mdir := filepath.Join(root, "models")
+	outdir := filepath.Join(root, "gen")
+	for _, d := range []string{qdir, mdir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(mdir, "user.go"), []byte(userModel), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stub := `package queries
+import (
+	"context"
+	"github.com/vorzela/vorm/query"
+)
+// vorm:query name=ByAge
+func ByAge(ctx context.Context, db query.DB) ([]User, error) {
+	return Users.New().GroupBy("age").Get(ctx, db)
+}
+`
+	if err := os.WriteFile(filepath.Join(qdir, "q.go"), []byte(stub), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Run(&Options{QueryDir: qdir, OutDir: outdir, ModelDir: mdir, Package: "gen", Dialect: "postgres"})
+	if err == nil || !strings.Contains(err.Error(), "does not cover") {
+		t.Fatalf("expected uncovered GROUP BY error, got %v", err)
+	}
+}
+
 func TestLowerDynamicInBindsEveryElement(t *testing.T) {
 	src := lower(t, "postgres", `
 // vorm:query name=ByIDs

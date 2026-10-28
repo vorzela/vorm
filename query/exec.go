@@ -44,6 +44,9 @@ func (b *Builder[T]) CompileSelect() (sql string, args []any, err error) {
 			return "", nil, err
 		}
 	}
+	if err := b.meta.ValidateGroupBy(b.groupBy, cols); err != nil {
+		return "", nil, err
+	}
 	for _, o := range b.orderBy {
 		if err := SafeIdent(o.col); err != nil {
 			return "", nil, err

@@ -234,18 +234,18 @@ func (b *Builder[T]) validatePredOpValue(p pred) error {
 func parseWhere(args ...any) (pred, error) {
 	switch len(args) {
 	case 2:
-		col, ok := args[0].(string)
+		col, ok := columnArg(args[0])
 		if !ok {
-			return pred{}, fmt.Errorf("where: first arg must be column string")
+			return pred{}, fmt.Errorf("where: first arg must be column string or query.Col")
 		}
 		if op, ok := args[1].(Operator); ok {
 			return pred{col: col, op: op.Op, arg: op.Value}, nil
 		}
 		return pred{col: col, op: "=", arg: args[1]}, nil
 	case 3:
-		col, ok := args[0].(string)
+		col, ok := columnArg(args[0])
 		if !ok {
-			return pred{}, fmt.Errorf("where: first arg must be column string")
+			return pred{}, fmt.Errorf("where: first arg must be column string or query.Col")
 		}
 		op, ok := args[1].(string)
 		if !ok {
@@ -254,6 +254,19 @@ func parseWhere(args ...any) (pred, error) {
 		return pred{col: col, op: strings.ToUpper(op), arg: args[2]}, nil
 	default:
 		return pred{}, fmt.Errorf("where: want 2 or 3 args, got %d", len(args))
+	}
+}
+
+// columnArg accepts the plain strings used by older call sites and the typed
+// Col keys emitted by codegen. Both lower to the same predicate column.
+func columnArg(v any) (string, bool) {
+	switch c := v.(type) {
+	case string:
+		return c, true
+	case Col:
+		return string(c), true
+	default:
+		return "", false
 	}
 }
 

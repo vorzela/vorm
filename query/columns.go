@@ -127,6 +127,76 @@ func (m Meta) RequireColumn(col string) error {
 	return nil
 }
 
+// ValidateGroupBy checks that every projected column is covered by GROUP BY.
+// A grouped primary key also covers the rest of that table's columns, matching
+// the functional dependency PostgreSQL and MySQL recognise. Joined-table
+// columns are only covered when that same column is grouped explicitly.
+func (m Meta) ValidateGroupBy(groupBy, selects []string) error {
+	if len(groupBy) == 0 || len(selects) == 0 {
+		return nil
+	}
+	pk := m.PrimaryKey
+	if pk == "" {
+		pk = "id"
+	}
+
+	grouped := make(map[string]struct{}, len(groupBy))
+	pkGrouped := false
+	for _, g := range groupBy {
+		table, name := splitColumnRef(g)
+		if m.refersToBase(table) {
+			table = ""
+			if strings.EqualFold(name, pk) {
+				pkGrouped = true
+			}
+		}
+		grouped[columnRefKey(table, name)] = struct{}{}
+	}
+
+	for _, sel := range selects {
+		if IsSafeExpr(sel) {
+			continue // aggregate expressions do not need to be grouped
+		}
+		table, name := splitColumnRef(sel)
+		if m.refersToBase(table) {
+			if _, ok := grouped[columnRefKey("", name)]; ok {
+				continue
+			}
+			if pkGrouped {
+				continue
+			}
+		} else if _, ok := grouped[columnRefKey(table, name)]; ok {
+			continue
+		}
+		return fmt.Errorf("vorm/query: GROUP BY %s does not cover projected column %q on table %q; add it to GroupBy or narrow the projection with Select(...)",
+			strings.Join(groupBy, ", "), sel, m.Table)
+	}
+	return nil
+}
+
+// refersToBase reports whether a qualifier belongs to this Meta's table.
+// An unqualified column always refers to the base table in a vorm query.
+func (m Meta) refersToBase(table string) bool {
+	if table == "" || strings.EqualFold(table, m.Table) {
+		return true
+	}
+	if i := strings.LastIndex(m.Table, "."); i >= 0 {
+		return strings.EqualFold(table, m.Table[i+1:])
+	}
+	return false
+}
+
+func splitColumnRef(col string) (table, name string) {
+	if i := strings.LastIndex(col, "."); i >= 0 {
+		return col[:i], col[i+1:]
+	}
+	return "", col
+}
+
+func columnRefKey(table, name string) string {
+	return strings.ToLower(table) + "\x00" + strings.ToLower(name)
+}
+
 // CheckColumnValue ensures col exists and value is assignable to the model field type (when known).
 func (m Meta) CheckColumnValue(col string, value any) error {
 	if err := m.RequireColumn(col); err != nil {

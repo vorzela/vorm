@@ -203,6 +203,12 @@ func (pl *planner) selectPlan(cols []string, mode selectMode) (*plan, error) {
 		if err := query.RejectStarInList(cols); err != nil {
 			return nil, err
 		}
+		if len(pl.st.GroupBy) > 0 {
+			meta := query.Meta{Table: pl.ms.Table, Columns: pl.ms.Columns, PrimaryKey: pl.ms.PrimaryKey}
+			if err := meta.ValidateGroupBy(pl.st.GroupBy, cols); err != nil {
+				return nil, err
+			}
+		}
 		quoted := make([]string, len(cols))
 		for i, c := range cols {
 			q, err := pl.quoteCol(c)
