@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   functionally dependent on a grouped primary key) in the runtime builder and
   query codegen. Uncovered projections fail with an actionable error instead of
   emitting SQL that Postgres/MySQL reject.
+- `vorm version` reports the module version recorded by the Go toolchain (the
+  GitHub tag used by `go install ...@vX.Y.Z`) instead of a hard-coded string.
 
 ## [0.2.19] — 2026-10-09
 
