@@ -20,13 +20,19 @@ func (b *Builder[T]) Distinct() *Builder[T] {
 
 // DistinctOn is PostgreSQL DISTINCT ON (cols...) — ignored on MySQL (falls back to Distinct).
 func (b *Builder[T]) DistinctOn(cols ...string) *Builder[T] {
+	for _, c := range cols {
+		if err := b.meta.RequireColumn(c); err != nil {
+			b.wheres = append(b.wheres, pred{col: "__error__", op: "=", arg: err.Error()})
+			return b
+		}
+	}
 	b.distinct = true
 	b.distinctOn = append([]string(nil), cols...)
 	return b
 }
 
 // OrderByDesc is OrderBy(col, "DESC").
-func (b *Builder[T]) OrderByDesc(col string) *Builder[T] {
+func (b *Builder[T]) OrderByDesc(col any) *Builder[T] {
 	return b.OrderBy(col, "DESC")
 }
 
@@ -52,8 +58,23 @@ func (b *Builder[T]) RightJoin(table, on string) *Builder[T] {
 	return b
 }
 
+// GroupByCols is GroupBy using generated typed column keys.
+func (b *Builder[T]) GroupByCols(cols ...Col) *Builder[T] {
+	names := make([]string, len(cols))
+	for i, c := range cols {
+		names[i] = string(c)
+	}
+	return b.GroupBy(names...)
+}
+
 // GroupBy adds GROUP BY cols (use with Select aggregates / Distinct).
 func (b *Builder[T]) GroupBy(cols ...string) *Builder[T] {
+	for _, c := range cols {
+		if err := b.meta.RequireColumn(c); err != nil {
+			b.wheres = append(b.wheres, pred{col: "__error__", op: "=", arg: err.Error()})
+			return b
+		}
+	}
 	b.groupBy = append(b.groupBy, cols...)
 	return b
 }
@@ -88,6 +109,56 @@ func (b *Builder[T]) HavingRaw(fragment string, args ...any) *Builder[T] {
 		arg: args,
 	})
 	return b
+}
+
+// WhereGroup adds a parenthesized predicate group. Use it when mixing AND and
+// OR so SQL precedence is explicit:
+//
+//	Users.Where("active", true).
+//		WhereGroup(func(q *Builder[User]) {
+//			q.Where("role", "admin").OrWhere("role", "owner")
+//		})
+//	// (active = $1) AND (role = $2 OR role = $3)
+func (b *Builder[T]) WhereGroup(fn func(*Builder[T])) *Builder[T] {
+	sub := newBuilder[T](b.meta)
+	sub.dialect = b.dialect
+	if fn != nil {
+		fn(sub)
+	}
+	if len(sub.wheres) == 0 {
+		return b
+	}
+	b.wheres = append(b.wheres, pred{col: "__group__", group: sub.wheres})
+	return b
+}
+
+// OrWhereGroup is WhereGroup joined with OR.
+func (b *Builder[T]) OrWhereGroup(fn func(*Builder[T])) *Builder[T] {
+	b.WhereGroup(fn)
+	if len(b.wheres) > 0 {
+		b.wheres[len(b.wheres)-1].or = true
+	}
+	return b
+}
+
+// WhereBetween is col BETWEEN low AND high.
+func (b *Builder[T]) WhereBetween(col string, low, high any) *Builder[T] {
+	return b.Where(col, Between(low, high))
+}
+
+// WhereNotBetween is col NOT BETWEEN low AND high.
+func (b *Builder[T]) WhereNotBetween(col string, low, high any) *Builder[T] {
+	return b.Where(col, NotBetween(low, high))
+}
+
+// WhereLike is col LIKE pattern. Use query.LikePattern for contains search.
+func (b *Builder[T]) WhereLike(col string, pattern string) *Builder[T] {
+	return b.Where(col, "LIKE", pattern)
+}
+
+// WhereNotLike is col NOT LIKE pattern.
+func (b *Builder[T]) WhereNotLike(col string, pattern string) *Builder[T] {
+	return b.Where(col, "NOT LIKE", pattern)
 }
 
 // OrWhere adds a predicate joined with OR to the previous WHERE group.

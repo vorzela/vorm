@@ -79,7 +79,9 @@ type StubFunc struct {
 	GroupBy    []string
 	Orders     []OrderSpec
 	Limit      int
+	LimitSet   bool
 	Offset     int
+	OffsetSet  bool
 	LimitExpr  string // dynamic LIMIT bound as a parameter
 	OffsetExpr string
 	Distinct   bool
@@ -96,8 +98,8 @@ type StubFunc struct {
 	CreateVals    []KVSpec
 	UpdateVals    []KVSpec
 	OrCreateAttrs []KVSpec // FirstOrCreate / UpdateOrCreate lookup map
-	SoftIDExpr    string // SoftDelete/ForceDelete id expr
-	AmountExpr    string // Increment/Decrement amount
+	SoftIDExpr    string   // SoftDelete/ForceDelete id expr
+	AmountExpr    string   // Increment/Decrement amount
 	RelSubselects []RelSubselect
 
 	// Pagination arguments for the Paginate/OffsetPage terminal.
@@ -108,9 +110,9 @@ type StubFunc struct {
 	CursorCol   string
 	CursorDesc  bool
 
-	Pending      bool // body too complex to lower
-	PendingWhy   string
-	GenerateErr  string // hard generate failure (e.g. FirstOrCreate without unique index)
+	Pending     bool // body too complex to lower
+	PendingWhy  string
+	GenerateErr string // hard generate failure (e.g. FirstOrCreate without unique index)
 }
 
 type ParamSpec struct {
@@ -1344,7 +1346,13 @@ func lowerBuilderCall(name string, call *ast.CallExpr, st *StubFunc, models map[
 		}
 		n, isLit := litInt(args[0])
 		expr := exprString(args[0])
+		if isLit && n < 0 {
+			st.Pending = true
+			st.PendingWhy = name + " must be >= 0"
+			return true
+		}
 		if name == "Limit" {
+			st.LimitSet = true
 			if isLit {
 				st.Limit = n
 			} else {
@@ -1352,6 +1360,7 @@ func lowerBuilderCall(name string, call *ast.CallExpr, st *StubFunc, models map[
 			}
 			return true
 		}
+		st.OffsetSet = true
 		if isLit {
 			st.Offset = n
 		} else {

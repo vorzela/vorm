@@ -5,12 +5,42 @@ All notable changes to [vorm](https://github.com/vorzela/vorm) are documented he
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] — 2026-11-02
+
+### Added
+
+- **Explicit predicate groups**: `WhereGroup` / `OrWhereGroup` (runtime and
+  entity shortcuts) produce parenthesized AND/OR expressions.
+- `WhereBetween` / `WhereNotBetween`, `WhereLike` / `WhereNotLike`,
+  `Between` / `NotBetween`, and `WhereIn` accepts a single slice without `...`.
+- `CreateID` returns UUID/string/numeric primary keys unchanged (runtime + Entity);
+  `Create` remains the integer-key convenience.
+- `CountDistinct` for correct parent counts after joins; `Clone` for safe reuse.
+- Entity shortcuts `All`, `Count`, `Exists`, `First`, `FirstOrFail`, `CreateID`.
+- Typed `OrderBy`/`OrderByDesc` and `SelectCols` / `GroupByCols` support.
 
 ### Fixed
 
-- `Where` / `OrWhere` / `Having` accept typed `query.Col` column keys at
-  runtime (`Where(models.Users.Col.Email, email)`), not just plain strings.
+- `Delete()` on a soft-delete model now stays soft after `WithTrashed()`; use
+  `ForceDelete()` for hard deletes.
+- `Where(col, nil)` and `Where(col, "!=", nil)` compile to `IS NULL` /
+  `IS NOT NULL` instead of `= NULL`.
+- `Limit(0)` now emits `LIMIT 0`; negative limit/offset is rejected.
+- `WhereExists` binds `?` arguments correctly (and still accepts explicit `$n`).
+- `WhereFullText` uses `plainto_tsquery` so arbitrary user text cannot cause a
+  syntax error.
+- `WhereSearch` qualifies columns when joins are present.
+- Cursor pagination validates/qualifies the cursor column and extracts values
+  from `table.column`.
+- `Count` / `Exists` reject `GroupBy`/`Having` instead of silently wrong SQL;
+  multi-column `DISTINCT` counts use a subquery.
+- `Count` / aggregates on grouped queries are no longer silently incorrect.
+- `Create`/`CreateMany`/`Update`/`Upsert` reject database-generated columns.
+- MySQL `Open` normalises `mysql://` URLs and defaults `parseTime=true`.
+- pgx `BeginTx` honours isolation/read-only options and pings on open.
+- Pivot `Sync` orders attachments deterministically; MySQL duplicate handling
+  uses `ON DUPLICATE KEY UPDATE` instead of `INSERT IGNORE`.
+- `OnlyTrashed()` on a non-soft model now fails instead of ignoring the trash filter.
 - `GROUP BY` now validates that the projection is covered by the grouping (or
   functionally dependent on a grouped primary key) in the runtime builder and
   query codegen. Uncovered projections fail with an actionable error instead of

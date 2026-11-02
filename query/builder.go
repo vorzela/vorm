@@ -78,7 +78,9 @@ type Builder[T any] struct {
 	distinctOn   []string
 	lock         string
 	limit        int
+	limitSet     bool
 	offset       int
+	offsetSet    bool
 	soft         bool // respect soft deletes when meta.SoftDeletes
 	onlyTrashed  bool // WHERE deleted_at IS NOT NULL
 	with         []string
@@ -93,10 +95,11 @@ type extraSelect struct {
 }
 
 type pred struct {
-	col string
-	op  string
-	arg any
-	or  bool // join with OR instead of AND
+	col   string
+	op    string
+	arg   any
+	or    bool // join with OR instead of AND
+	group []pred
 }
 
 type order struct {
@@ -118,8 +121,8 @@ func newBuilder[T any](meta Meta) *Builder[T] {
 func (b *Builder[T]) clone() *Builder[T] {
 	cp := *b
 	cp.selects = append([]string(nil), b.selects...)
-	cp.wheres = append([]pred(nil), b.wheres...)
-	cp.havings = append([]pred(nil), b.havings...)
+	cp.wheres = clonePreds(b.wheres)
+	cp.havings = clonePreds(b.havings)
 	cp.orderBy = append([]order(nil), b.orderBy...)
 	cp.joins = append([]joinClause(nil), b.joins...)
 	cp.groupBy = append([]string(nil), b.groupBy...)
@@ -127,6 +130,24 @@ func (b *Builder[T]) clone() *Builder[T] {
 	cp.with = append([]string(nil), b.with...)
 	cp.extraSelects = append([]extraSelect(nil), b.extraSelects...)
 	return &cp
+}
+
+// Clone returns an independent copy of the builder. The fluent methods mutate
+// the receiver, so use Clone when the same base query is reused concurrently.
+func (b *Builder[T]) Clone() *Builder[T] { return b.clone() }
+
+func clonePreds(in []pred) []pred {
+	if in == nil {
+		return nil
+	}
+	out := make([]pred, len(in))
+	for i, p := range in {
+		out[i] = p
+		if len(p.group) > 0 {
+			out[i].group = clonePreds(p.group)
+		}
+	}
+	return out
 }
 
 // With eager-loads registered relations after the rows are fetched. Each relation
@@ -141,7 +162,12 @@ func (b *Builder[T]) With(relations ...string) *Builder[T] {
 
 // Dialect sets postgres (default) or mysql placeholders.
 func (b *Builder[T]) Dialect(d Dialect) *Builder[T] {
-	b.dialect = d
+	switch d {
+	case DialectPostgres, DialectMySQL:
+		b.dialect = d
+	default:
+		b.wheres = append(b.wheres, pred{col: "__error__", op: "=", arg: fmt.Errorf("vorm/query: unknown dialect %q", d)})
+	}
 	return b
 }
 
@@ -158,6 +184,15 @@ func (b *Builder[T]) Select(cols ...string) *Builder[T] {
 	}
 	b.selects = cols
 	return b
+}
+
+// SelectCols narrows projection using generated typed column keys.
+func (b *Builder[T]) SelectCols(cols ...Col) *Builder[T] {
+	names := make([]string, len(cols))
+	for i, c := range cols {
+		names[i] = string(c)
+	}
+	return b.Select(names...)
 }
 
 // Where adds a predicate.
@@ -224,7 +259,7 @@ func (b *Builder[T]) validatePredOpValue(p pred) error {
 	switch op {
 	case "IS NULL", "IS NOT NULL":
 		return nil
-	case "IN", "NOT IN":
+	case "IN", "NOT IN", "BETWEEN", "NOT BETWEEN":
 		return b.meta.CheckColumnValue(p.col, Operator{Op: op, Value: p.arg})
 	default:
 		return b.meta.CheckColumnValue(p.col, p.arg)
@@ -239,7 +274,10 @@ func parseWhere(args ...any) (pred, error) {
 			return pred{}, fmt.Errorf("where: first arg must be column string or query.Col")
 		}
 		if op, ok := args[1].(Operator); ok {
-			return pred{col: col, op: op.Op, arg: op.Value}, nil
+			return operatorPred(col, op), nil
+		}
+		if args[1] == nil {
+			return pred{col: col, op: "IS NULL"}, nil
 		}
 		return pred{col: col, op: "=", arg: args[1]}, nil
 	case 3:
@@ -251,10 +289,32 @@ func parseWhere(args ...any) (pred, error) {
 		if !ok {
 			return pred{}, fmt.Errorf("where: second arg must be operator string")
 		}
-		return pred{col: col, op: strings.ToUpper(op), arg: args[2]}, nil
+		op = strings.ToUpper(strings.TrimSpace(op))
+		arg := args[2]
+		if arg == nil {
+			switch op {
+			case "=":
+				return pred{col: col, op: "IS NULL"}, nil
+			case "<>", "!=":
+				return pred{col: col, op: "IS NOT NULL"}, nil
+			}
+		}
+		return pred{col: col, op: op, arg: arg}, nil
 	default:
 		return pred{}, fmt.Errorf("where: want 2 or 3 args, got %d", len(args))
 	}
+}
+
+func operatorPred(col string, op Operator) pred {
+	if op.Value == nil {
+		switch strings.ToUpper(op.Op) {
+		case "=", "":
+			return pred{col: col, op: "IS NULL"}
+		case "<>", "!=":
+			return pred{col: col, op: "IS NOT NULL"}
+		}
+	}
+	return pred{col: col, op: strings.ToUpper(op.Op), arg: op.Value}
 }
 
 // columnArg accepts the plain strings used by older call sites and the typed
@@ -271,8 +331,14 @@ func columnArg(v any) (string, bool) {
 }
 
 // OrderBy appends ORDER BY col [ASC|DESC]. Column must exist on Meta.
-func (b *Builder[T]) OrderBy(col string, dir ...string) *Builder[T] {
-	if err := b.meta.RequireColumn(col); err != nil {
+// Accepts a string or a generated query.Col key.
+func (b *Builder[T]) OrderBy(col any, dir ...string) *Builder[T] {
+	name, ok := columnArg(col)
+	if !ok {
+		b.wheres = append(b.wheres, pred{col: "__error__", op: "=", arg: fmt.Errorf("OrderBy: column must be string or query.Col")})
+		return b
+	}
+	if err := b.meta.RequireColumn(name); err != nil {
 		b.wheres = append(b.wheres, pred{col: "__error__", op: "=", arg: err.Error()})
 		return b
 	}
@@ -285,19 +351,30 @@ func (b *Builder[T]) OrderBy(col string, dir ...string) *Builder[T] {
 		b.wheres = append(b.wheres, pred{col: "__error__", op: "=", arg: err.Error()})
 		return b
 	}
-	b.orderBy = append(b.orderBy, order{col: col, dir: nd})
+	b.orderBy = append(b.orderBy, order{col: name, dir: nd})
 	return b
 }
 
-// Limit sets LIMIT.
+// Limit sets LIMIT. Limit(0) means "return no rows"; omit the call to leave
+// the query unlimited. Negative values are rejected when the SQL is compiled.
 func (b *Builder[T]) Limit(n int) *Builder[T] {
+	if n < 0 {
+		b.wheres = append(b.wheres, pred{col: "__error__", op: "=", arg: fmt.Errorf("vorm/query: Limit must be >= 0, got %d", n)})
+		return b
+	}
 	b.limit = n
+	b.limitSet = true
 	return b
 }
 
-// Offset sets OFFSET.
+// Offset sets OFFSET. Negative values are rejected when the SQL is compiled.
 func (b *Builder[T]) Offset(n int) *Builder[T] {
+	if n < 0 {
+		b.wheres = append(b.wheres, pred{col: "__error__", op: "=", arg: fmt.Errorf("vorm/query: Offset must be >= 0, got %d", n)})
+		return b
+	}
 	b.offset = n
+	b.offsetSet = true
 	return b
 }
 
@@ -310,6 +387,10 @@ func (b *Builder[T]) WithTrashed() *Builder[T] {
 
 // OnlyTrashed restricts the query to soft-deleted rows (WHERE deleted_at IS NOT NULL).
 func (b *Builder[T]) OnlyTrashed() *Builder[T] {
+	if !b.meta.SoftDeletes || !b.meta.HasColumn(SoftDeleteColumn) {
+		b.wheres = append(b.wheres, pred{col: "__error__", op: "=", arg: fmt.Errorf("vorm/query: OnlyTrashed requires Meta.SoftDeletes and a %q column", SoftDeleteColumn)})
+		return b
+	}
 	b.soft = false
 	b.onlyTrashed = true
 	return b
@@ -320,11 +401,13 @@ func (b *Builder[T]) ApplyFind(opts FindOptions) *Builder[T] {
 	if len(opts.Select) > 0 {
 		b.Select(opts.Select...)
 	}
-	for col, v := range opts.Where {
-		b.Where(col, v)
+	// Sort map keys so the same logical query always compiles to identical
+	// SQL text (better for statement caching and stable tests).
+	for _, col := range sortedKeys(opts.Where) {
+		b.Where(col, opts.Where[col])
 	}
-	for col, dir := range opts.Order {
-		switch d := dir.(type) {
+	for _, col := range sortedKeys(opts.Order) {
+		switch d := opts.Order[col].(type) {
 		case Sort:
 			b.OrderBy(col, string(d))
 		case string:

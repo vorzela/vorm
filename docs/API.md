@@ -186,33 +186,46 @@ values are bound (`$n` / `?`). There is no `SELECT *`.
 .Where("active", true)
 .Where("age", ">", 18)
 .Where("age", query.MoreThan(18))
-.WhereIn("status", "active", "invited")
+.Where("deleted_at", nil)                     // IS NULL
+.Where("deleted_at", "!=", nil)               // IS NOT NULL
+.WhereIn("status", "active", "invited")       // or WhereIn("id", ids) for a slice
 .WhereNotIn("id", ids...)
+.WhereBetween("age", 18, 65)
+.WhereNotBetween(...)
+.WhereLike("name", query.LikePattern(term))
 .WhereNull("deleted_at")
 .WhereNotNull("email")
 .OrWhere("role", "admin")
+.WhereGroup(func(q *query.Builder[User]) {    // explicit parentheses
+    q.Where("role", "admin").OrWhere("role", "owner")
+})
 .WhereSearch([]string{"name", "email"}, term) // ILIKE (Postgres) / LIKE (MySQL)
 .WhereRaw(`"age" > ?`, 18)                    // placeholders only; never concatenate values
-.WhereExists(`SELECT 1 FROM posts WHERE posts.user_id = users.id`)
+.WhereExists(`SELECT 1 FROM posts WHERE posts.user_id = users.id AND posts.state = ?`, "published")
 .WhereNotExists(...)
-.WhereFullText("name", q)                     // Postgres tsquery / MySQL MATCH
+.WhereFullText("search_vector", q)            // Postgres plainto_tsquery / MySQL MATCH
 .WhereJsonContains("metadata", value)         // @> jsonb / JSON_CONTAINS
 .WhereHas("posts")
 .WhereDoesntHave("posts")
 .WhereRelation("posts", "state", "published")
 ```
 
-`Where` accepts 2 args (`col, value`) or 3 (`col, op, value`). `ILIKE` is
+`Where` accepts 2 args (`col, value`) or 3 (`col, op, value`). A `nil` value
+becomes `IS NULL` (or `IS NOT NULL` with `!=`/`<>`). `WhereIn` accepts either
+`WhereIn("id", 1, 2)` or `WhereIn("id", ids)`; an empty set matches no rows.
+`WhereGroup` is the explicit way to mix AND and OR — SQL gives AND higher
+precedence, so parenthesise when that is not what you mean. `ILIKE` is
 PostgreSQL-only.
 
 ### Projection, order, page window
 
 ```go
 .Select("id", "email")          // subset of Meta.Columns
-.OrderBy("created_at")          // ASC
+.SelectCols(models.Users.Col.ID, models.Users.Col.Email)
+.OrderBy("created_at")          // string or query.Col
 .OrderBy("created_at", "DESC")
 .OrderByDesc("id")
-.Limit(20)
+.Limit(20)                      // Limit(0) returns zero rows; omit for unlimited
 .Offset(40)
 .Distinct()
 .DistinctOn("user_id")          // PostgreSQL
@@ -250,6 +263,11 @@ Default: soft-deleted rows are excluded when `Meta.SoftDeletes` is true.
 Under that scope, `deleted_at` is also omitted from the SELECT list (it would
 always be NULL). `WithTrashed` / `OnlyTrashed` still project `deleted_at`.
 
+`Delete()` always soft-deletes when `Meta.SoftDeletes` is true — including after
+`WithTrashed()`. Use `ForceDelete()` for a real `DELETE`. `OnlyTrashed()`
+requires soft-delete metadata; otherwise it returns a validation error instead
+of silently scanning every row.
+
 ### Eager load / extras
 
 ```go
@@ -258,6 +276,16 @@ always be NULL). `WithTrashed` / `OnlyTrashed` still project `deleted_at`.
 .WithCount("posts")          // posts_count
 .WithExists("posts")         // posts_exists
 ```
+
+### Performance notes
+
+- `With("posts.comments")` eagerly loads each segment with a batched `IN` query.
+- `ChunkByID` / `LazyByID` use keyset pagination (`id > last`), never OFFSET.
+- `CursorPaginate` is keyset; order by a unique column (PK by default).
+- `CountDistinct` is the correct parent count when a join can duplicate rows.
+- `Meta.Indexed(col)` / `Meta.UniqueOn(cols...)` expose introspected index facts.
+- Generated queries use explicit projections and bound placeholders; runtime
+  builders cache scan plans and use prepared-statement-friendly stable SQL.
 
 ### Find options (map style)
 
@@ -291,7 +319,8 @@ Call on a builder **or** on the entity (entity methods start a fresh builder).
 | `First(ctx, db)` | `(*T, error)` | `(nil, nil)` when missing |
 | `FirstOrFail(ctx, db)` | `(*T, error)` | `query.ErrNoRows` when missing |
 | `FindByID(ctx, db, id)` | `(*T, error)` | PK lookup |
-| `Count(ctx, db)` | `(int64, error)` | `COUNT(*)` |
+| `Count(ctx, db)` | `(int64, error)` | `COUNT(*)`; rejects grouped queries |
+| `CountDistinct(ctx, db, col)` | `(int64, error)` | Safe parent count after joins |
 | `Exists(ctx, db)` | `(bool, error)` | `SELECT 1 … LIMIT 1` |
 | `Each(ctx, db, fn)` | `error` | Streams `Get` results |
 | `Pluck(ctx, db, col)` | `([]any, error)` | One column |
@@ -316,10 +345,11 @@ columns (`Meta.Generated`) are omitted from inserts.
 
 | Method | Returns | Notes |
 |--------|---------|--------|
-| `Create(ctx, db, values)` | `(int64, error)` | Insert; returns last id when available |
+| `Create(ctx, db, values)` | `(int64, error)` | Insert; integer PK |
+| `CreateID(ctx, db, values)` | `(any, error)` | Insert; UUID/string/numeric PK |
 | `CreateMany(ctx, db, rows)` | `(int64, error)` | Batch insert |
 | `Update(ctx, db, values)` | `(int64, error)` | Rows affected |
-| `Delete(ctx, db)` | `(int64, error)` | Soft-delete if the model has `deleted_at`, else hard |
+| `Delete(ctx, db)` | `(int64, error)` | Soft-delete whenever `Meta.SoftDeletes` is set; else hard |
 | `SoftDelete(ctx, db)` | `(int64, error)` | Sets `deleted_at` |
 | `ForceDelete(ctx, db)` | `(int64, error)` | Real `DELETE` |
 | `Restore(ctx, db)` | `(int64, error)` | Clears `deleted_at` |

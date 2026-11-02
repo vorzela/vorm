@@ -30,9 +30,15 @@ func buildColumnTypes[T any]() columnTypeMap {
 func collectFields(t reflect.Type, out columnTypeMap) {
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
-		if f.Anonymous && f.Type.Kind() == reflect.Struct {
-			collectFields(f.Type, out)
-			continue
+		if f.Anonymous && f.Tag.Get("db") == "" {
+			ft := f.Type
+			if ft.Kind() == reflect.Pointer {
+				ft = ft.Elem()
+			}
+			if ft.Kind() == reflect.Struct {
+				collectFields(ft, out)
+				continue
+			}
 		}
 		col := f.Tag.Get("db")
 		if col == "" || col == "-" {
@@ -107,8 +113,11 @@ func (m Meta) HasColumn(col string) bool {
 // RequireColumn errors if the column is not listed on Meta (prevents typos / injection via unknown names).
 // Qualified columns on other tables (joins) are allowed after SafeIdent only.
 func (m Meta) RequireColumn(col string) error {
-	if col == "" || strings.HasPrefix(col, "__") {
+	if strings.HasPrefix(col, "__") {
 		return nil
+	}
+	if col == "" {
+		return fmt.Errorf("vorm/query: empty column name on table %q", m.Table)
 	}
 	if err := SafeIdent(col); err != nil {
 		return err
@@ -219,6 +228,18 @@ func checkAssignable(want reflect.Type, value any, col string) error {
 		}
 		if op.Op == "IN" || op.Op == "NOT IN" {
 			return checkInValues(want, op.Value, col)
+		}
+		if op.Op == "BETWEEN" || op.Op == "NOT BETWEEN" {
+			rv := reflect.ValueOf(op.Value)
+			if !rv.IsValid() || (rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array) || rv.Len() != 2 {
+				return fmt.Errorf("vorm/query: %s on %q expects exactly two values", op.Op, col)
+			}
+			for i := 0; i < 2; i++ {
+				if err := checkAssignable(want, rv.Index(i).Interface(), col); err != nil {
+					return err
+				}
+			}
+			return nil
 		}
 		return checkAssignable(want, op.Value, col)
 	}

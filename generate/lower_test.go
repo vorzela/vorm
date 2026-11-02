@@ -862,7 +862,7 @@ func Search(ctx context.Context, db query.DB, q string) ([]User, error) {
 		`EXISTS (SELECT 1 FROM "posts" WHERE "posts"."user_id" = "users"."id")`,
 		`"posts"."state" = $1`,
 		`(SELECT COUNT(*) FROM "posts" WHERE "posts"."user_id" = "users"."id") AS "posts_count"`,
-		`"name" @@ to_tsquery('english', $1)`,
+		`"name" @@ plainto_tsquery('english', $1)`,
 		`"email" @> $2::jsonb`,
 	)
 }

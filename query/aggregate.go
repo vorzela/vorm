@@ -44,6 +44,7 @@ func (b *Builder[T]) Pluck(ctx context.Context, db DB, col string) ([]any, error
 func (b *Builder[T]) Value(ctx context.Context, db DB, col string) (any, error) {
 	cp := b.clone()
 	cp.limit = 1
+	cp.limitSet = true
 	vals, err := cp.Pluck(ctx, db, col)
 	if err != nil || len(vals) == 0 {
 		return nil, err
@@ -74,6 +75,9 @@ func (b *Builder[T]) Max(ctx context.Context, db DB, col string) (float64, error
 func (b *Builder[T]) aggregate(ctx context.Context, db DB, fn, col string) (float64, error) {
 	if err := b.meta.RequireColumn(col); err != nil {
 		return 0, err
+	}
+	if len(b.groupBy) > 0 || len(b.havings) > 0 {
+		return 0, validationErr("select", b.meta.Table, "aggregate helpers do not support GroupBy/Having; select the aggregate explicitly")
 	}
 	fn = strings.ToUpper(fn)
 	switch fn {

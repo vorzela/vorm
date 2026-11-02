@@ -141,10 +141,10 @@ func (b *Builder[T]) CompileSelect() (sql string, args []any, err error) {
 		}
 		sb.WriteString(strings.Join(parts, ", "))
 	}
-	if b.limit > 0 {
+	if b.limitSet {
 		sb.WriteString(fmt.Sprintf(" LIMIT %d", b.limit))
 	}
-	if b.offset > 0 {
+	if b.offsetSet {
 		sb.WriteString(fmt.Sprintf(" OFFSET %d", b.offset))
 	}
 	if b.lock != "" {
@@ -280,6 +280,20 @@ func (b *Builder[T]) compilePreds(preds []pred, argStart int, allowOr bool) (str
 				return "", nil, err
 			}
 			clause = tmpParts[0]
+		case "__group__":
+			if len(p.group) == 0 {
+				continue
+			}
+			subSQL, subArgs, err := b.compilePreds(p.group, n, true)
+			if err != nil {
+				return "", nil, err
+			}
+			if subSQL == "" {
+				continue
+			}
+			clause = "(" + subSQL + ")"
+			n += len(subArgs)
+			args = append(args, subArgs...)
 		default:
 			op := strings.ToUpper(p.op)
 			if op == "" {
@@ -319,6 +333,14 @@ func (b *Builder[T]) compilePreds(preds []pred, argStart int, allowOr bool) (str
 					}
 					clause = fmt.Sprintf("%s %s (%s)", p.col, op, strings.Join(holders, ", "))
 				}
+			case "BETWEEN", "NOT BETWEEN":
+				vals, ok := toAnySlice(p.arg)
+				if !ok || len(vals) != 2 {
+					return "", nil, fmt.Errorf("%s expects exactly two values", op)
+				}
+				low, high := placeholder(), placeholder()
+				args = append(args, vals[0], vals[1])
+				clause = fmt.Sprintf("%s %s %s AND %s", p.col, op, low, high)
 			default:
 				clause = fmt.Sprintf("%s %s %s", p.col, op, placeholder())
 				args = append(args, p.arg)
@@ -358,14 +380,21 @@ func toAnySlice(v any) ([]any, bool) {
 }
 
 func (b *Builder[T]) checkWhereErrors() error {
-	for _, p := range b.wheres {
+	if err := checkPredErrors(b.wheres); err != nil {
+		return err
+	}
+	return checkPredErrors(b.havings)
+}
+
+func checkPredErrors(preds []pred) error {
+	for _, p := range preds {
 		if p.col == "__error__" {
 			return fmt.Errorf("%v", p.arg)
 		}
-	}
-	for _, p := range b.havings {
-		if p.col == "__error__" {
-			return fmt.Errorf("%v", p.arg)
+		if len(p.group) > 0 {
+			if err := checkPredErrors(p.group); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -396,7 +425,7 @@ func (b *Builder[T]) Get(ctx context.Context, db DB) ([]T, error) {
 	defer rows.Close()
 
 	var out []T
-	if b.limit > 0 && b.limit <= 8192 {
+	if b.limitSet && b.limit > 0 && b.limit <= 8192 {
 		out = make([]T, 0, b.limit)
 	}
 	for rows.Next() {
@@ -421,9 +450,8 @@ func (b *Builder[T]) Get(ctx context.Context, db DB) ([]T, error) {
 // should be an error.
 func (b *Builder[T]) First(ctx context.Context, db DB) (*T, error) {
 	cp := *b
-	if cp.limit == 0 {
-		cp.limit = 1
-	}
+	cp.limit = 1
+	cp.limitSet = true
 	rows, err := cp.Get(ctx, db)
 	if err != nil {
 		return nil, err
@@ -491,6 +519,9 @@ func (b *Builder[T]) Exists(ctx context.Context, db DB) (bool, error) {
 	if err := b.checkWhereErrors(); err != nil {
 		return false, err
 	}
+	if len(b.groupBy) > 0 || len(b.havings) > 0 {
+		return false, validationErr("exists", b.meta.Table, "Exists with GroupBy/Having is ambiguous; use Get/Count instead")
+	}
 	tableQ, err := QuoteIdent(b.dialect, b.meta.Table)
 	if err != nil {
 		return false, err
@@ -533,9 +564,36 @@ func (b *Builder[T]) Exists(ctx context.Context, db DB) (bool, error) {
 }
 
 // Count executes COUNT. Uses COUNT(*) or COUNT(DISTINCT col) when Distinct is set.
+// A multi-column DISTINCT is counted through a subquery. Grouped queries return
+// an explicit validation error: use Get and len(rows) (or CountDistinct) when
+// you need to count groups.
 func (b *Builder[T]) Count(ctx context.Context, db DB) (int64, error) {
 	if err := b.checkWhereErrors(); err != nil {
 		return 0, err
+	}
+	if len(b.groupBy) > 0 || len(b.havings) > 0 {
+		return 0, validationErr("count", b.meta.Table, "Count with GroupBy/Having is ambiguous; count the returned groups instead")
+	}
+	if b.distinct && len(b.selects) > 1 {
+		cp := b.clone()
+		cp.orderBy = nil
+		cp.limit = 0
+		cp.limitSet = false
+		cp.offset = 0
+		cp.offsetSet = false
+		cp.lock = ""
+		inner, innerArgs, err := cp.CompileSelect()
+		if err != nil {
+			return 0, err
+		}
+		sqlText := "SELECT COUNT(*) FROM (" + inner + ") AS _vorm_count"
+		obs := observe(ctx, "count", b.meta.Table, sqlText, innerArgs)
+		var n int64
+		if err := db.QueryRowContext(ctx, sqlText, innerArgs...).Scan(&n); err != nil {
+			return 0, obs.done(ctx, 0, wrapErr("count", b.meta.Table, sqlText, len(innerArgs), err))
+		}
+		_ = obs.done(ctx, 1, nil)
+		return n, nil
 	}
 	tableQ, err := QuoteIdent(b.dialect, b.meta.Table)
 	if err != nil {
@@ -576,6 +634,20 @@ func (b *Builder[T]) Count(ctx context.Context, db DB) (int64, error) {
 	return n, nil
 }
 
+// CountDistinct counts distinct non-null values of col. It is the safe way to
+// count parent rows when a Join can duplicate them.
+func (b *Builder[T]) CountDistinct(ctx context.Context, db DB, col string) (int64, error) {
+	if err := b.meta.RequireColumn(col); err != nil {
+		return 0, err
+	}
+	cp := b.clone()
+	cp.distinct = true
+	cp.distinctOn = nil
+	cp.selects = []string{col}
+	cp.extraSelects = nil
+	return cp.Count(ctx, db)
+}
+
 // sortedKeys gives map-driven statements a stable column order so the same
 // logical write always produces the same SQL text (prepared-statement friendly).
 func sortedKeys(values map[string]any) []string {
@@ -587,29 +659,53 @@ func sortedKeys(values map[string]any) []string {
 	return keys
 }
 
-// Create inserts an explicit column map and returns the new primary key.
-// Prefer typed keys: map[models.UsersCol]any{ models.Users.Col.Email: email }.
+// Create inserts an explicit column map and returns an integer primary key.
+// For UUID/string primary keys use CreateID (or read the value from your input).
 func (b *Builder[T]) Create(ctx context.Context, db DB, values map[Col]any) (int64, error) {
-	return b.createStrings(ctx, db, stringMap(values))
+	id, err := b.CreateID(ctx, db, values)
+	if err != nil {
+		return 0, err
+	}
+	n, ok := coerceInt64(id)
+	if !ok {
+		return 0, validationErr("insert", b.meta.Table,
+			"primary key %q returned %T, not an integer; use CreateID for non-integer keys", b.meta.PrimaryKey, id)
+	}
+	return n, nil
 }
 
-func (b *Builder[T]) createStrings(ctx context.Context, db DB, values map[string]any) (int64, error) {
+// CreateID inserts values and returns the database-generated primary key as an
+// `any`, so UUID, string, and composite-first-column keys work. The value is
+// returned unchanged from RETURNING on Postgres; on MySQL an explicitly supplied
+// primary key is returned, otherwise LastInsertId is used.
+func (b *Builder[T]) CreateID(ctx context.Context, db DB, values map[Col]any) (any, error) {
+	return b.createAny(ctx, db, stringMap(values))
+}
+
+func (b *Builder[T]) createAny(ctx context.Context, db DB, values map[string]any) (any, error) {
 	if len(values) == 0 {
-		return 0, validationErr("insert", b.meta.Table, "Create requires values")
+		return nil, validationErr("insert", b.meta.Table, "Create requires values")
 	}
 	keys := sortedKeys(values)
 	for _, k := range keys {
+		if b.meta.IsGenerated(k) {
+			return nil, validationErr("insert", b.meta.Table, "column %q is database-generated and cannot be written", k)
+		}
 		if err := b.meta.CheckColumnValue(k, values[k]); err != nil {
-			return 0, err
+			return nil, err
 		}
 	}
 	tableQ, err := QuoteIdent(b.dialect, b.meta.Table)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	pkQ, err := QuoteIdent(b.dialect, b.meta.PrimaryKey)
+	pk := b.meta.PrimaryKey
+	if pk == "" {
+		return nil, validationErr("insert", b.meta.Table, "Create requires Meta.PrimaryKey")
+	}
+	pkQ, err := QuoteIdent(b.dialect, pk)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	cols := make([]string, 0, len(keys))
 	args := make([]any, 0, len(keys))
@@ -617,7 +713,7 @@ func (b *Builder[T]) createStrings(ctx context.Context, db DB, values map[string
 	for i, k := range keys {
 		qc, err := QuoteIdent(b.dialect, k)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 		cols = append(cols, qc)
 		args = append(args, values[k])
@@ -633,25 +729,55 @@ func (b *Builder[T]) createStrings(ctx context.Context, db DB, values map[string
 	if b.dialect != DialectMySQL {
 		sqlText += " RETURNING " + pkQ
 		obs := observe(ctx, "insert", b.meta.Table, sqlText, args)
-		var id int64
+		var id any
 		if err := db.QueryRowContext(ctx, sqlText, args...).Scan(&id); err != nil {
-			return 0, obs.done(ctx, 0, wrapErr("insert", b.meta.Table, sqlText, len(args), err))
+			return nil, obs.done(ctx, 0, wrapErr("insert", b.meta.Table, sqlText, len(args), err))
 		}
 		_ = obs.done(ctx, 1, nil)
 		return id, nil
 	}
 
+	// MySQL: an explicitly supplied PK (e.g. UUID) is the authoritative value,
+	// but the INSERT still has to run.
+	supplied, hasSupplied := values[pk]
 	obs := observe(ctx, "insert", b.meta.Table, sqlText, args)
 	res, err := db.ExecContext(ctx, sqlText, args...)
 	if err != nil {
-		return 0, obs.done(ctx, 0, wrapErr("insert", b.meta.Table, sqlText, len(args), err))
+		return nil, obs.done(ctx, 0, wrapErr("insert", b.meta.Table, sqlText, len(args), err))
+	}
+	if hasSupplied && supplied != nil {
+		_ = obs.done(ctx, 1, nil)
+		return supplied, nil
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		return 0, obs.done(ctx, 0, wrapErr("insert", b.meta.Table, sqlText, len(args), err))
+		return nil, obs.done(ctx, 0, wrapErr("insert", b.meta.Table, sqlText, len(args), err))
 	}
 	_ = obs.done(ctx, 1, nil)
 	return id, nil
+}
+
+// coerceInt64 accepts the numeric types drivers commonly return for integer PKs.
+func coerceInt64(v any) (int64, bool) {
+	switch n := normalizeKey(v).(type) {
+	case int64:
+		return n, true
+	case int:
+		return int64(n), true
+	case uint64:
+		return int64(n), true
+	case string:
+		var out int64
+		if _, err := fmt.Sscan(n, &out); err == nil {
+			return out, true
+		}
+	case []byte:
+		var out int64
+		if _, err := fmt.Sscan(string(n), &out); err == nil {
+			return out, true
+		}
+	}
+	return 0, false
 }
 
 // CreateMany inserts several rows in one statement. Every map must carry the
@@ -694,6 +820,9 @@ func (b *Builder[T]) createManyStrings(ctx context.Context, db DB, rows []map[st
 			if !ok {
 				return 0, validationErr("insert", b.meta.Table, "CreateMany row is missing column %q", k)
 			}
+			if b.meta.IsGenerated(k) {
+				return 0, validationErr("insert", b.meta.Table, "column %q is database-generated and cannot be written", k)
+			}
 			if err := b.meta.CheckColumnValue(k, v); err != nil {
 				return 0, err
 			}
@@ -734,6 +863,9 @@ func (b *Builder[T]) updateStrings(ctx context.Context, db DB, values map[string
 	}
 	keys := sortedKeys(values)
 	for _, k := range keys {
+		if b.meta.IsGenerated(k) {
+			return 0, validationErr("update", b.meta.Table, "column %q is database-generated and cannot be written", k)
+		}
 		if err := b.meta.CheckColumnValue(k, values[k]); err != nil {
 			return 0, err
 		}
@@ -785,8 +917,10 @@ func (b *Builder[T]) updateStrings(ctx context.Context, db DB, values map[string
 }
 
 // Delete soft-deletes when Meta.SoftDeletes is set; otherwise hard-deletes.
+// WithTrashed() only changes the read scope — it never turns Delete into a hard
+// delete. Use ForceDelete explicitly for that.
 func (b *Builder[T]) Delete(ctx context.Context, db DB) (int64, error) {
-	if b.meta.SoftDeletes && b.soft {
+	if b.meta.SoftDeletes {
 		return b.SoftDelete(ctx, db)
 	}
 	return b.ForceDelete(ctx, db)
@@ -794,6 +928,12 @@ func (b *Builder[T]) Delete(ctx context.Context, db DB) (int64, error) {
 
 // SoftDelete sets deleted_at = CURRENT_TIMESTAMP.
 func (b *Builder[T]) SoftDelete(ctx context.Context, db DB) (int64, error) {
+	if !b.meta.SoftDeletes {
+		return 0, validationErr("soft_delete", b.meta.Table, "table has no soft-delete support (Meta.SoftDeletes is false)")
+	}
+	if !b.meta.HasColumn(SoftDeleteColumn) {
+		return 0, validationErr("soft_delete", b.meta.Table, "table has no %q column", SoftDeleteColumn)
+	}
 	tableQ, err := QuoteIdent(b.dialect, b.meta.Table)
 	if err != nil {
 		return 0, err

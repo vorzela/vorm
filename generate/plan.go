@@ -166,6 +166,9 @@ func (pl *planner) selectPlan(cols []string, mode selectMode) (*plan, error) {
 	if pl.ms.Table == "" {
 		return nil, fmt.Errorf("cannot resolve model/entity %q — run vorm generate models", pl.st.Entity)
 	}
+	if (mode == selectCount || mode == selectExists) && (len(pl.st.GroupBy) > 0 || len(pl.st.Havings) > 0) {
+		return nil, fmt.Errorf("%s with GroupBy/Having is not lowered; return the grouped rows and count them in Go", pl.st.Action)
+	}
 	p := &plan{}
 	p.text("SELECT ")
 	switch {
@@ -299,7 +302,7 @@ func (pl *planner) writeLimitOffset(p *plan) error {
 		p.text(" LIMIT ")
 		p.placeholder(pl.dialect)
 		p.arg(pl.bindFn(pl.st.LimitExpr))
-	case pl.st.Limit > 0:
+	case pl.st.LimitSet:
 		p.text(fmt.Sprintf(" LIMIT %d", pl.st.Limit))
 	}
 	switch {
@@ -307,7 +310,7 @@ func (pl *planner) writeLimitOffset(p *plan) error {
 		p.text(" OFFSET ")
 		p.placeholder(pl.dialect)
 		p.arg(pl.bindFn(pl.st.OffsetExpr))
-	case pl.st.Offset > 0:
+	case pl.st.OffsetSet:
 		p.text(fmt.Sprintf(" OFFSET %d", pl.st.Offset))
 	}
 	return nil
@@ -472,7 +475,7 @@ func (pl *planner) writePred(p *plan, w WhereSpec) error {
 			p.text(")")
 			return nil
 		}
-		p.text(q + " @@ to_tsquery('english', ")
+		p.text(q + " @@ plainto_tsquery('english', ")
 		p.placeholder(pl.dialect)
 		p.arg(pl.bindFn(w.ArgExpr))
 		p.text(")")

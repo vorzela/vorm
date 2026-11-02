@@ -2,6 +2,7 @@ package query
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -18,6 +19,10 @@ func openPostgresPgx(ctx context.Context, databaseURL string) (*PgxDB, error) {
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		return nil, err
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("vorm/query: pgx ping: %w", err)
 	}
 	return &PgxDB{Pool: pool}, nil
 }
@@ -49,8 +54,28 @@ func (p *PgxDB) ExecContext(ctx context.Context, sql string, args ...any) (Resul
 	return pgxResult{tag: tag}, nil
 }
 
-func (p *PgxDB) BeginTx(ctx context.Context, _ *TxOptions) (Tx, error) {
-	tx, err := p.Pool.Begin(ctx)
+func (p *PgxDB) BeginTx(ctx context.Context, opts *TxOptions) (Tx, error) {
+	txOpts := pgx.TxOptions{}
+	if opts != nil {
+		if opts.ReadOnly {
+			txOpts.AccessMode = pgx.ReadOnly
+		}
+		switch opts.Isolation {
+		case 0:
+			// database/sql default: leave zero value (server default)
+		case sql.LevelReadUncommitted:
+			txOpts.IsoLevel = pgx.ReadUncommitted
+		case sql.LevelReadCommitted:
+			txOpts.IsoLevel = pgx.ReadCommitted
+		case sql.LevelRepeatableRead:
+			txOpts.IsoLevel = pgx.RepeatableRead
+		case sql.LevelSerializable:
+			txOpts.IsoLevel = pgx.Serializable
+		default:
+			return nil, fmt.Errorf("vorm/query: unsupported pgx isolation level %v", opts.Isolation)
+		}
+	}
+	tx, err := p.Pool.BeginTx(ctx, txOpts)
 	if err != nil {
 		return nil, err
 	}

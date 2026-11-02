@@ -21,6 +21,7 @@ func (b *Builder[T]) ChunkByID(ctx context.Context, db DB, size int, fn func([]T
 		cp := b.clone()
 		cp.orderBy = []order{{col: pk, dir: "ASC"}}
 		cp.limit = size
+		cp.limitSet = true
 		if last != nil {
 			cp.wheres = append(cp.wheres, pred{col: pk, op: ">", arg: last})
 		}

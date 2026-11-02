@@ -298,6 +298,10 @@ ok, err := models.Users.Where("email", e).Exists(ctx, db)
 id, err := models.Users.New().Create(ctx, db, map[string]any{
 	"email": "ada@example.com", "status": models.UserStatusActive,
 })
+// UUID/string key:
+key, err := models.Users.CreateID(ctx, db, map[query.Col]any{
+	models.Users.Col.ID: uuid.NewString(), models.Users.Col.Email: e,
+})
 n, err := models.Users.Where("id", id).Update(ctx, db, map[string]any{"active": false})
 
 n, err := models.Users.Where("id", id).SoftDelete(ctx, db)   // sets deleted_at
@@ -307,17 +311,25 @@ n, err := models.Users.Where("id", id).ForceDelete(ctx, db)  // real DELETE
 
 Soft-deleted rows are excluded automatically; `WithTrashed()` includes them.
 Default soft-scoped SELECTs omit `deleted_at` (it would always be NULL).
+`Delete()` remains soft even after `WithTrashed()`; use `ForceDelete()` for a real
+delete. `.Limit(0)` returns zero rows; omit `Limit` for unlimited.
 
 Filters:
 
 ```go
 .Where("age", ">", 18)                       // operator form
+.Where("deleted_at", nil)                    // IS NULL automatically
 .Where("status", query.In("active", "invited"))
+.WhereIn("id", ids)                          // slice accepted without ...
+.WhereBetween("age", 18, 65)
 .Where("name", query.IsNotNull())
 .WhereNull("deleted_at")
 .WhereNotIn("status", "banned")
 .WhereSearch([]string{"name", "email"}, term) // ILIKE on Postgres, LIKE on MySQL
 .OrWhere("role", "admin")
+.WhereGroup(func(q *query.Builder[models.User]) { // explicit (A OR B) AND C
+	q.Where("role", "admin").OrWhere("role", "owner")
+})
 .Join("posts", "posts.user_id = users.id")
 .GroupBy("status").Having("COUNT(*)", ">", 5)
 .HavingRaw("SUM(age) > ?", 100)

@@ -22,8 +22,8 @@ func TestDiffModelsSchemaMatch(t *testing.T) {
 	}
 	models := map[string]ModelSpec{
 		"Users": {
-			Entity: "Users",
-			Table:  "users",
+			Entity:  "Users",
+			Table:   "users",
 			Columns: []string{"id", "email", "name"},
 			Fields: []FieldSpec{
 				{Name: "ID", Column: "id", Type: "int64"},

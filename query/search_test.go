@@ -72,7 +72,7 @@ func TestWhereFullTextAndJsonContainsSQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sql != `SELECT "id", "search_vector", "metadata" FROM "users" WHERE "search_vector" @@ to_tsquery('english', $1)` {
+	if sql != `SELECT "id", "search_vector", "metadata" FROM "users" WHERE "search_vector" @@ plainto_tsquery('english', $1)` {
 		t.Fatalf("fts: %s", sql)
 	}
 	if len(args) != 1 || args[0] != "ada & lovelace" {

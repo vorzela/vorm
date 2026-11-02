@@ -140,7 +140,7 @@ func (a BelongsToManyAssoc) attachRows(ctx context.Context, db DB, ids []any, ex
 	sqlText := fmt.Sprintf("INSERT INTO %s (%s) VALUES %s", table, strings.Join(cols, ", "), strings.Join(placeholders, ", "))
 	if a.UniquePair {
 		if d == DialectMySQL {
-			sqlText = "INSERT IGNORE " + strings.TrimPrefix(sqlText, "INSERT ")
+			sqlText += fmt.Sprintf(" ON DUPLICATE KEY UPDATE %s = %s", parentCol, parentCol)
 		} else {
 			conflict := []string{parentCol, relatedCol}
 			if typeCol != "" {
@@ -240,6 +240,10 @@ func (a BelongsToManyAssoc) Sync(ctx context.Context, db DB, ids ...any) error {
 			attach = append(attach, id)
 		}
 	}
+	// Map iteration is randomized; sort so the generated SQL/args are stable.
+	sort.Slice(attach, func(i, j int) bool {
+		return fmt.Sprint(normalizeKey(attach[i])) < fmt.Sprint(normalizeKey(attach[j]))
+	})
 	if len(detach) > 0 {
 		if err := a.Detach(ctx, db, detach...); err != nil {
 			return err

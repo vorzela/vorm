@@ -6,18 +6,31 @@ type Operator struct {
 	Value any
 }
 
-func Eq(v any) Operator              { return Operator{Op: "=", Value: v} }
-func Not(v any) Operator             { return Operator{Op: "<>", Value: v} }
-func MoreThan(v any) Operator        { return Operator{Op: ">", Value: v} }
-func MoreThanOrEqual(v any) Operator { return Operator{Op: ">=", Value: v} }
-func LessThan(v any) Operator        { return Operator{Op: "<", Value: v} }
-func LessThanOrEqual(v any) Operator { return Operator{Op: "<=", Value: v} }
-func Like(v any) Operator            { return Operator{Op: "LIKE", Value: v} }
-func ILike(v any) Operator           { return Operator{Op: "ILIKE", Value: v} }
-func In(vals ...any) Operator        { return Operator{Op: "IN", Value: vals} }
-func NotIn(vals ...any) Operator     { return Operator{Op: "NOT IN", Value: vals} }
-func IsNull() Operator               { return Operator{Op: "IS NULL", Value: nil} }
-func IsNotNull() Operator            { return Operator{Op: "IS NOT NULL", Value: nil} }
+func Eq(v any) Operator                 { return Operator{Op: "=", Value: v} }
+func Not(v any) Operator                { return Operator{Op: "<>", Value: v} }
+func MoreThan(v any) Operator           { return Operator{Op: ">", Value: v} }
+func MoreThanOrEqual(v any) Operator    { return Operator{Op: ">=", Value: v} }
+func LessThan(v any) Operator           { return Operator{Op: "<", Value: v} }
+func LessThanOrEqual(v any) Operator    { return Operator{Op: "<=", Value: v} }
+func Like(v any) Operator               { return Operator{Op: "LIKE", Value: v} }
+func ILike(v any) Operator              { return Operator{Op: "ILIKE", Value: v} }
+func In(vals ...any) Operator           { return Operator{Op: "IN", Value: flattenInValues(vals)} }
+func NotIn(vals ...any) Operator        { return Operator{Op: "NOT IN", Value: flattenInValues(vals)} }
+func Between(low, high any) Operator    { return Operator{Op: "BETWEEN", Value: []any{low, high}} }
+func NotBetween(low, high any) Operator { return Operator{Op: "NOT BETWEEN", Value: []any{low, high}} }
+func IsNull() Operator                  { return Operator{Op: "IS NULL", Value: nil} }
+func IsNotNull() Operator               { return Operator{Op: "IS NOT NULL", Value: nil} }
+
+// flattenInValues accepts both In(1, 2) and In([]int{1, 2}) without forcing
+// callers to remember the variadic expansion.
+func flattenInValues(vals []any) []any {
+	if len(vals) == 1 {
+		if flat, ok := toAnySlice(vals[0]); ok {
+			return flat
+		}
+	}
+	return vals
+}
 
 // Sort direction for FindOptions.Order.
 type Sort string

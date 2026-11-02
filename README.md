@@ -204,10 +204,32 @@ page, err := models.Users.Where("active", true).OrderBy("id").
 fmt.Println(page.TotalCount(), page.HasMore)
 
 n, err := models.Users.Where("id", id).SoftDelete(ctx, db)
+
+// nil → IS NULL; group mixed AND/OR explicitly.
+models.Users.
+	Where("deleted_at", nil).
+	WhereGroup(func(q *query.Builder[models.User]) {
+		q.Where("role", "admin").OrWhere("role", "owner")
+	}).
+	Get(ctx, db)
+
+// Typed columns work in Where, OrderBy, SelectCols and GroupByCols.
+models.Users.SelectCols(models.Users.Col.ID, models.Users.Col.Email).
+	OrderBy(models.Users.Col.Email).Limit(20).Get(ctx, db)
+
+// UUID/string primary keys: CreateID returns the key unchanged.
+id, err := models.Users.CreateID(ctx, db, map[query.Col]any{
+	models.Users.Col.ID:    uuid.NewString(),
+	models.Users.Col.Email: email,
+})
+
+// Join-safe parent count.
+total, err := models.Users.Join("posts", "posts.user_id = users.id").
+	CountDistinct(ctx, db, "users.id")
 ```
 
 Rows scan into structs automatically through a cached reflection plan; no mapper
-registration is needed.
+registration is needed. `Limit(0)` returns zero rows; omit it for unlimited.
 
 ## Type safety
 

@@ -18,9 +18,15 @@ func (e *Entity[T]) FindByID(ctx context.Context, db DB, id any) (*T, error) {
 	return e.New().Where(e.meta.PrimaryKey, id).First(ctx, db)
 }
 
-// Create inserts values. Keys should be generated Cols (e.g. models.Users.Col.Email).
+// Create inserts values and returns an integer primary key.
+// Keys should be generated Cols (e.g. models.Users.Col.Email).
 func (e *Entity[T]) Create(ctx context.Context, db DB, values map[Col]any) (int64, error) {
 	return e.New().Create(ctx, db, values)
+}
+
+// CreateID inserts values and returns a UUID/string/numeric primary key unchanged.
+func (e *Entity[T]) CreateID(ctx context.Context, db DB, values map[Col]any) (any, error) {
+	return e.New().CreateID(ctx, db, values)
 }
 
 // Update applies values with no WHERE — prefer Users.Where(...).Update(...).
@@ -36,6 +42,11 @@ func (e *Entity[T]) SoftDelete(ctx context.Context, db DB, id any) (int64, error
 // ForceDelete permanently deletes by primary key (ignores soft deletes).
 func (e *Entity[T]) ForceDelete(ctx context.Context, db DB, id any) (int64, error) {
 	return e.New().Where(e.meta.PrimaryKey, id).ForceDelete(ctx, db)
+}
+
+// CountDistinct counts distinct values of col, safe after joins.
+func (e *Entity[T]) CountDistinct(ctx context.Context, db DB, col string) (int64, error) {
+	return e.New().CountDistinct(ctx, db, col)
 }
 
 // Paginate runs offset/cursor pagination from the entity root.

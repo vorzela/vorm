@@ -61,19 +61,9 @@ func Open(ctx context.Context, databaseURL string, opts ...OpenOption) (Conn, er
 		return nil, fmt.Errorf("vorm/query: empty DATABASE_URL")
 	}
 	if DetectDialect(databaseURL) == DialectMySQL {
-		return OpenMySQL(stripMySQLScheme(databaseURL))
+		return OpenMySQL(databaseURL)
 	}
 	return OpenPostgres(ctx, databaseURL, opts...)
-}
-
-// stripMySQLScheme converts a mysql:// URL into the DSN go-sql-driver expects.
-func stripMySQLScheme(url string) string {
-	for _, prefix := range []string{"mysql://", "mariadb://"} {
-		if rest, ok := strings.CutPrefix(url, prefix); ok {
-			return rest
-		}
-	}
-	return url
 }
 
 // OpenPostgres opens Postgres. Default driver is pgx v5; pass WithDriver(PostgresPQ) for lib/pq.

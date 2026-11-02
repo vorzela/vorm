@@ -1,5 +1,7 @@
 # vorm (Go) — agent guide
 
+> Short contract: [`AGENTS.md`](AGENTS.md). Use this file for the full workflow.
+
 ## Hard rules
 
 1. **Never hand-edit `models/` or `vorm/gen/`.** Regenerate: `vorm generate`.
@@ -46,6 +48,50 @@ must be a map literal checked against `Meta.Indexes`).
 `WhereHas` / `WhereDoesntHave` / `WhereRelation`, `WithCount` / `WithExists`,
 `WhereFullText`, `WhereJsonContains`, and `DistinctOn` also lower when names and
 columns are literals.
+
+Runtime-only helpers that stay callable through the builder (and are reported
+as pending if used in a stub): `WhereGroup` / `OrWhereGroup`, `WhereBetween`,
+`WhereLike`, `CountDistinct`, `CreateID`, `Clone`, and the Entity shortcuts
+`All` / `Count` / `Exists` / `First`.
+
+## Query semantics (important)
+
+```go
+// nil becomes IS NULL / IS NOT NULL automatically.
+Where("deleted_at", nil)
+Where("deleted_at", "!=", nil)
+
+// Group mixed AND/OR explicitly.
+Where("active", true).WhereGroup(func(q *query.Builder[User]) {
+    q.Where("role", "admin").OrWhere("role", "owner")
+})
+
+// Empty IN is safe; a single slice is accepted without "...".
+WhereIn("id", ids)
+WhereBetween("age", 18, 65)
+
+// Limit(0) returns zero rows; omit Limit for unlimited.
+Limit(0)
+```
+
+- `.Delete()` stays **soft** on soft-delete models even after `.WithTrashed()`;
+  `.ForceDelete()` is the hard delete. `.OnlyTrashed()` requires soft-delete meta.
+- `Create` returns `int64`; use `CreateID` for UUID/string primary keys.
+- `Upsert` uses `ON DUPLICATE KEY UPDATE` on MySQL and never swallows unrelated errors.
+- `WhereFullText` uses `plainto_tsquery` on Postgres (safe for arbitrary words).
+- `WhereExists` / `WhereNotExists` accept `?` bind markers or explicit `$n` placeholders.
+- `Count` / `Exists` reject `GroupBy`/`Having`; return the grouped rows and count in Go,
+  or use `CountDistinct` for joined queries.
+- `OrderBy`/`OrderByDesc` accept `string` or `query.Col`; use `SelectCols`/`GroupByCols`
+  for typed projections.
+
+### Performance defaults
+
+- `With` batches one `IN` query per relation segment (no N+1).
+- `ChunkByID` is keyset (`id > last ORDER BY id LIMIT n`), never OFFSET.
+- `CursorPaginate` is keyset; order by a unique column (PK by default).
+- `CountDistinct` avoids duplicate parent counts after joins.
+- Generated queries use explicit columns and bound placeholders.
 
 ## Generated shape
 

@@ -30,13 +30,28 @@ func (b *Builder[T]) compileExistsPred(p pred, not bool, placeholder func() stri
 		}
 		return "EXISTS (" + inner + ")", args, nil
 	}
-	clause := "EXISTS (" + p.op + ")"
-	if not {
-		clause = "NOT EXISTS (" + p.op + ")"
-	}
 	var args []any
-	if raw, ok := p.arg.([]any); ok {
-		args = raw
+	inner := p.op
+	if raw, ok := p.arg.([]any); ok && len(raw) > 0 {
+		switch {
+		case strings.Contains(inner, "$"):
+			// Caller supplied PostgreSQL positional placeholders ($1, $2, …).
+			args = raw
+		case strings.Contains(inner, "?"):
+			expanded, err := expandRawBinds(inner, raw, placeholder, &args)
+			if err != nil {
+				return "", nil, err
+			}
+			// expandRawBinds returns a parenthesized predicate; strip the outer
+			// pair so EXISTS (...) stays readable and valid on both dialects.
+			inner = strings.TrimSuffix(strings.TrimPrefix(expanded, "("), ")")
+		default:
+			return "", nil, fmt.Errorf("WhereExists has %d arguments but no ? placeholders", len(raw))
+		}
+	}
+	clause := "EXISTS (" + inner + ")"
+	if not {
+		clause = "NOT EXISTS (" + inner + ")"
 	}
 	return clause, args, nil
 }

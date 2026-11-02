@@ -119,6 +119,7 @@ func emitSelectBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Diale
 	// First/FirstOrFail read a single row, so stop the scan in the database.
 	if st.Action != "Get" && st.Limit == 0 && st.LimitExpr == "" {
 		st.Limit = 1
+		st.LimitSet = true
 	}
 	pl := newPlanner(st, ms, d, binder(st, hasParams))
 	p, err := pl.selectPlan(resultCols(st, ms), selectRows)
@@ -210,7 +211,7 @@ func emitOffsetPaginateBody(b *strings.Builder, st StubFunc, ms ModelSpec, d que
 
 	// LIMIT/OFFSET are bound, so every page reuses one prepared statement.
 	pageStub := st
-	pageStub.Limit, pageStub.Offset = 0, 0
+	pageStub.Limit, pageStub.LimitSet, pageStub.Offset, pageStub.OffsetSet = 0, false, 0, false
 	pageStub.LimitExpr, pageStub.OffsetExpr = "perPage", "(page-1)*perPage"
 	localBind := passthroughBinder(bind, "perPage", "(page-1)*perPage")
 
@@ -229,7 +230,7 @@ func emitOffsetPaginateBody(b *strings.Builder, st StubFunc, ms ModelSpec, d que
 	b.WriteString("\trows.Close()\n")
 
 	countStub := st
-	countStub.Limit, countStub.Offset = 0, 0
+	countStub.Limit, countStub.LimitSet, countStub.Offset, countStub.OffsetSet = 0, false, 0, false
 	countStub.LimitExpr, countStub.OffsetExpr = "", ""
 	countStub.Orders = nil
 	cp, err := newPlanner(countStub, ms, d, bind).selectPlan(nil, selectCount)
@@ -272,7 +273,7 @@ func emitSimplePaginateBody(b *strings.Builder, st StubFunc, ms ModelSpec, d que
 	b.WriteString("\tlimitN := perPage + 1\n")
 
 	pageStub := st
-	pageStub.Limit, pageStub.Offset = 0, 0
+	pageStub.Limit, pageStub.LimitSet, pageStub.Offset, pageStub.OffsetSet = 0, false, 0, false
 	pageStub.LimitExpr, pageStub.OffsetExpr = "limitN", "(page-1)*perPage"
 	localBind := passthroughBinder(bind, "perPage", "limitN", "(page-1)*perPage")
 
@@ -344,7 +345,7 @@ func emitCursorPaginateBody(b *strings.Builder, st StubFunc, ms ModelSpec, d que
 	}
 
 	pageStub := st
-	pageStub.Limit, pageStub.Offset = 0, 0
+	pageStub.Limit, pageStub.LimitSet, pageStub.Offset, pageStub.OffsetSet = 0, false, 0, false
 	pageStub.LimitExpr, pageStub.OffsetExpr = "limitN", ""
 	pageStub.Orders = []OrderSpec{{Col: col, Dir: dir}}
 	locals := []string{"perPage", "limitN"}

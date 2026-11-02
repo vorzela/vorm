@@ -146,7 +146,7 @@ func TestBelongsToManyAssocSync(t *testing.T) {
 	}
 }
 
-func TestBelongsToManyAssocAttachMySQLUsesInsertIgnore(t *testing.T) {
+func TestBelongsToManyAssocAttachMySQLUsesDuplicateNoop(t *testing.T) {
 	db := &fakeDB{}
 	a := BelongsToManyAssoc{
 		PivotTable:      "post_tags",
@@ -160,7 +160,7 @@ func TestBelongsToManyAssocAttachMySQLUsesInsertIgnore(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := db.statements()[0].SQL
-	want := "INSERT IGNORE INTO `post_tags` (`post_id`, `tag_id`) VALUES (?, ?)"
+	want := "INSERT INTO `post_tags` (`post_id`, `tag_id`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `post_id` = `post_id`"
 	if got != want {
 		t.Fatalf("mysql attach:\n got: %s\nwant: %s", got, want)
 	}

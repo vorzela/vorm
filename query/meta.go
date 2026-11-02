@@ -1,6 +1,7 @@
 package query
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"strings"
@@ -146,8 +147,33 @@ func (e *Entity[T]) Where(args ...any) *Builder[T] {
 	return e.New().Where(args...)
 }
 
-// OrderBy starts with ordering.
-func (e *Entity[T]) OrderBy(col string, dir ...string) *Builder[T] {
+// All returns every row in the model's default scope.
+func (e *Entity[T]) All(ctx context.Context, db DB) ([]T, error) {
+	return e.New().Get(ctx, db)
+}
+
+// First returns the first row, or (nil, nil) when the table is empty.
+func (e *Entity[T]) First(ctx context.Context, db DB) (*T, error) {
+	return e.New().First(ctx, db)
+}
+
+// FirstOrFail returns ErrNoRows when the table is empty.
+func (e *Entity[T]) FirstOrFail(ctx context.Context, db DB) (*T, error) {
+	return e.New().FirstOrFail(ctx, db)
+}
+
+// Count returns the number of rows in the default scope.
+func (e *Entity[T]) Count(ctx context.Context, db DB) (int64, error) {
+	return e.New().Count(ctx, db)
+}
+
+// Exists reports whether the table has at least one row in the default scope.
+func (e *Entity[T]) Exists(ctx context.Context, db DB) (bool, error) {
+	return e.New().Exists(ctx, db)
+}
+
+// OrderBy starts with ordering. Accepts string or query.Col.
+func (e *Entity[T]) OrderBy(col any, dir ...string) *Builder[T] {
 	return e.New().OrderBy(col, dir...)
 }
 
@@ -186,8 +212,23 @@ func (e *Entity[T]) Select(cols ...string) *Builder[T] {
 	return e.New().Select(cols...)
 }
 
-// OrderByDesc starts with descending ordering.
-func (e *Entity[T]) OrderByDesc(col string) *Builder[T] {
+// SelectCols starts with a narrowed projection using typed column keys.
+func (e *Entity[T]) SelectCols(cols ...Col) *Builder[T] {
+	return e.New().SelectCols(cols...)
+}
+
+// GroupBy starts with GROUP BY columns.
+func (e *Entity[T]) GroupBy(cols ...string) *Builder[T] {
+	return e.New().GroupBy(cols...)
+}
+
+// GroupByCols starts with GROUP BY using typed column keys.
+func (e *Entity[T]) GroupByCols(cols ...Col) *Builder[T] {
+	return e.New().GroupByCols(cols...)
+}
+
+// OrderByDesc starts with descending ordering. Accepts string or query.Col.
+func (e *Entity[T]) OrderByDesc(col any) *Builder[T] {
 	return e.New().OrderByDesc(col)
 }
 
@@ -259,6 +300,46 @@ func (e *Entity[T]) WithCount(names ...string) *Builder[T] {
 // WithExists adds a `{name}_exists` subquery column.
 func (e *Entity[T]) WithExists(names ...string) *Builder[T] {
 	return e.New().WithExists(names...)
+}
+
+// WhereGroup starts with a parenthesized predicate group.
+func (e *Entity[T]) WhereGroup(fn func(*Builder[T])) *Builder[T] {
+	return e.New().WhereGroup(fn)
+}
+
+// OrWhereGroup starts with a parenthesized OR group.
+func (e *Entity[T]) OrWhereGroup(fn func(*Builder[T])) *Builder[T] {
+	return e.New().OrWhereGroup(fn)
+}
+
+// WhereBetween starts with col BETWEEN low AND high.
+func (e *Entity[T]) WhereBetween(col string, low, high any) *Builder[T] {
+	return e.New().WhereBetween(col, low, high)
+}
+
+// WhereNotBetween starts with col NOT BETWEEN low AND high.
+func (e *Entity[T]) WhereNotBetween(col string, low, high any) *Builder[T] {
+	return e.New().WhereNotBetween(col, low, high)
+}
+
+// WhereLike starts with col LIKE pattern.
+func (e *Entity[T]) WhereLike(col, pattern string) *Builder[T] {
+	return e.New().WhereLike(col, pattern)
+}
+
+// WhereNotLike starts with col NOT LIKE pattern.
+func (e *Entity[T]) WhereNotLike(col, pattern string) *Builder[T] {
+	return e.New().WhereNotLike(col, pattern)
+}
+
+// WhereExists starts with an EXISTS subquery. Use ? placeholders for portable args.
+func (e *Entity[T]) WhereExists(subquerySQL string, args ...any) *Builder[T] {
+	return e.New().WhereExists(subquerySQL, args...)
+}
+
+// WhereNotExists starts with a NOT EXISTS subquery.
+func (e *Entity[T]) WhereNotExists(subquerySQL string, args ...any) *Builder[T] {
+	return e.New().WhereNotExists(subquerySQL, args...)
 }
 
 // WhereRaw adds a fragment whose ? markers are bound arguments.

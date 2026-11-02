@@ -72,6 +72,9 @@ func (b *Builder[T]) upsertStrings(ctx context.Context, db DB, rows []map[string
 		if err := b.meta.RequireColumn(c); err != nil {
 			return 0, err
 		}
+		if b.meta.IsGenerated(c) {
+			return 0, validationErr("upsert", b.meta.Table, "column %q is database-generated and cannot be written", c)
+		}
 	}
 	tableQ, err := QuoteIdent(b.dialect, b.meta.Table)
 	if err != nil {
@@ -96,6 +99,9 @@ func (b *Builder[T]) upsertStrings(ctx context.Context, db DB, rows []map[string
 			if !ok {
 				return 0, validationErr("upsert", b.meta.Table, "row is missing column %q", k)
 			}
+			if b.meta.IsGenerated(k) {
+				return 0, validationErr("upsert", b.meta.Table, "column %q is database-generated and cannot be written", k)
+			}
 			if err := b.meta.CheckColumnValue(k, v); err != nil {
 				return 0, err
 			}
@@ -112,7 +118,18 @@ func (b *Builder[T]) upsertStrings(ctx context.Context, db DB, rows []map[string
 	sqlText := fmt.Sprintf("INSERT INTO %s (%s) VALUES %s", tableQ, strings.Join(cols, ", "), strings.Join(tuples, ", "))
 	if len(updateCols) == 0 {
 		if b.dialect == DialectMySQL {
-			sqlText = "INSERT IGNORE " + strings.TrimPrefix(sqlText, "INSERT ")
+			noop := b.meta.PrimaryKey
+			if noop == "" && len(uniqueCols) > 0 {
+				noop = uniqueCols[0]
+			}
+			if noop == "" {
+				return 0, validationErr("upsert", b.meta.Table, "MySQL Upsert needs a primary key or unique columns for the duplicate no-op")
+			}
+			q, err := QuoteIdent(b.dialect, noop)
+			if err != nil {
+				return 0, err
+			}
+			sqlText += fmt.Sprintf(" ON DUPLICATE KEY UPDATE %s = %s", q, q)
 		} else if len(uniqueCols) > 0 {
 			uq, err := quoteIdentList(b.dialect, uniqueCols)
 			if err != nil {
@@ -201,7 +218,7 @@ func (b *Builder[T]) FirstOrCreate(ctx context.Context, db DB, attrs map[Col]any
 			merged[k] = v
 		}
 	}
-	id, err := b.Create(ctx, db, merged)
+	id, err := b.CreateID(ctx, db, merged)
 	if err != nil {
 		if IsUniqueViolation(err) {
 			return find.First(ctx, db)
@@ -238,7 +255,7 @@ func (b *Builder[T]) UpdateOrCreate(ctx context.Context, db DB, attrs, values ma
 		for k, v := range values {
 			merged[k] = v
 		}
-		id, err := b.Create(ctx, db, merged)
+		id, err := b.CreateID(ctx, db, merged)
 		if err != nil {
 			if !IsUniqueViolation(err) {
 				return nil, err

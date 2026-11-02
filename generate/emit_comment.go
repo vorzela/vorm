@@ -38,6 +38,7 @@ func previewSQL(st StubFunc, ms ModelSpec, d query.Dialect, hasParams bool) []st
 		cp := st
 		if cp.Action != "Get" && cp.Limit == 0 && cp.LimitExpr == "" {
 			cp.Limit = 1
+			cp.LimitSet = true
 		}
 		p, err := newPlanner(cp, ms, d, bind).selectPlan(resultCols(cp, ms), selectRows)
 		if err != nil {
@@ -184,9 +185,9 @@ func previewPaginateSQL(st StubFunc, ms ModelSpec, d query.Dialect, hasParams bo
 		}
 		out := []string{p.commentSQL(d)}
 		countStub := st
-		countStub.Limit = 0
+		countStub.Limit, countStub.LimitSet = 0, false
 		countStub.LimitExpr = ""
-		countStub.Offset = 0
+		countStub.Offset, countStub.OffsetSet = 0, false
 		countStub.OffsetExpr = ""
 		countStub.Orders = nil
 		cp, err := newPlanner(countStub, ms, d, bind).selectPlan(nil, selectCount)

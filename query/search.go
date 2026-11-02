@@ -1,6 +1,7 @@
 package query
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -14,11 +15,13 @@ func (b *Builder[T]) WhereSearch(columns []string, term string) *Builder[T] {
 	if term == "" || len(columns) == 0 {
 		return b
 	}
-	for _, c := range columns {
+	qualified := make([]string, len(columns))
+	for i, c := range columns {
 		if err := b.meta.RequireColumn(c); err != nil {
 			b.wheres = append(b.wheres, pred{col: "__error__", op: "=", arg: err.Error()})
 			return b
 		}
+		qualified[i] = b.qualify(c)
 	}
 	op := "ILIKE"
 	if b.dialect == DialectMySQL {
@@ -29,7 +32,7 @@ func (b *Builder[T]) WhereSearch(columns []string, term string) *Builder[T] {
 	b.wheres = append(b.wheres, pred{
 		col: "__search__",
 		op:  op,
-		arg: searchArg{Columns: columns, Pattern: pattern},
+		arg: searchArg{Columns: qualified, Pattern: pattern},
 	})
 	return b
 }
@@ -96,7 +99,9 @@ func appendSearchOrRaw(dialect Dialect, p pred, parts *[]string, args *[]any, pl
 		if dialect == DialectMySQL {
 			*parts = append(*parts, fmt.Sprintf("MATCH (%s) AGAINST (%s)", qc, placeholder()))
 		} else {
-			*parts = append(*parts, fmt.Sprintf("%s @@ to_tsquery('english', %s)", qc, placeholder()))
+			// plainto_tsquery treats the bound text as plain words, so spaces,
+			// punctuation, and user input never become a syntax error.
+			*parts = append(*parts, fmt.Sprintf("%s @@ plainto_tsquery('english', %s)", qc, placeholder()))
 		}
 		*args = append(*args, p.arg)
 		return nil
@@ -117,14 +122,14 @@ func appendSearchOrRaw(dialect Dialect, p pred, parts *[]string, args *[]any, pl
 	}
 }
 
-// WhereFullText filters a tsvector column (Postgres @@ to_tsquery) or a
+// WhereFullText filters a tsvector column (Postgres plainto_tsquery) or a
 // FULLTEXT-indexed column (MySQL MATCH AGAINST). The query string is bound.
 func (b *Builder[T]) WhereFullText(col, q string) *Builder[T] {
 	if err := b.meta.RequireColumn(col); err != nil {
 		b.wheres = append(b.wheres, pred{col: "__error__", op: "=", arg: err.Error()})
 		return b
 	}
-	if b.dialect == DialectMySQL && !metaHasFullText(b.meta, col) {
+	if b.dialect == DialectMySQL && len(b.meta.Indexes) > 0 && !metaHasFullText(b.meta, col) {
 		b.wheres = append(b.wheres, pred{col: "__error__", op: "=", arg: "vorm/query: WhereFullText on MySQL needs a FULLTEXT index"})
 		return b
 	}
@@ -138,8 +143,22 @@ func (b *Builder[T]) WhereJsonContains(col string, value any) *Builder[T] {
 		b.wheres = append(b.wheres, pred{col: "__error__", op: "=", arg: err.Error()})
 		return b
 	}
-	b.wheres = append(b.wheres, pred{col: "__json__", op: col, arg: value})
+	b.wheres = append(b.wheres, pred{col: "__json__", op: col, arg: jsonBinderValue(value)})
 	return b
+}
+
+// jsonBinderValue converts maps/slices to a JSON string so lib/pq and MySQL
+// drivers receive a value they can bind without custom adapters.
+func jsonBinderValue(v any) any {
+	switch v.(type) {
+	case nil, string, []byte, json.RawMessage:
+		return v
+	}
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return v // validation/DB error will surface a useful message
+	}
+	return string(raw)
 }
 
 // RawPiece is one slice of a WhereRaw fragment. Bind is a ? placeholder.

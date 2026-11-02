@@ -78,7 +78,9 @@ func (b *Builder[T]) paginateOffset(ctx context.Context, db DB, req PageRequest)
 	}
 	cp := b.clone()
 	cp.limit = req.PerPage
+	cp.limitSet = true
 	cp.offset = (req.Page - 1) * req.PerPage
+	cp.offsetSet = true
 
 	rows, err := cp.Get(ctx, db)
 	if err != nil {
@@ -108,7 +110,9 @@ func (b *Builder[T]) paginateSimple(ctx context.Context, db DB, req PageRequest)
 	}
 	cp := b.clone()
 	cp.limit = req.PerPage + 1
+	cp.limitSet = true
 	cp.offset = (req.Page - 1) * req.PerPage
+	cp.offsetSet = true
 	rows, err := cp.Get(ctx, db)
 	if err != nil {
 		return nil, err
@@ -149,6 +153,12 @@ func (b *Builder[T]) paginateCursor(ctx context.Context, db DB, req PageRequest)
 			col = b.meta.PrimaryKey
 		}
 	}
+	if col == "" {
+		return nil, validationErr("select", b.meta.Table, "cursor pagination requires an ORDER BY column")
+	}
+	if err := b.meta.RequireColumn(col); err != nil {
+		return nil, err
+	}
 	cp := b.clone()
 	dir := "ASC"
 	op := ">"
@@ -165,6 +175,7 @@ func (b *Builder[T]) paginateCursor(ctx context.Context, db DB, req PageRequest)
 		cp.wheres = append(cp.wheres, pred{col: col, op: op, arg: val})
 	}
 	cp.limit = req.PerPage + 1
+	cp.limitSet = true
 	rows, err := cp.Get(ctx, db)
 	if err != nil {
 		return nil, err
@@ -277,7 +288,7 @@ func cursorValueFromRow[T any](row T, col string) any {
 	if !rv.IsValid() || rv.Kind() != reflect.Struct {
 		return nil
 	}
-	path, ok := structFields(rv.Type())[strings.ToLower(col)]
+	path, ok := structFields(rv.Type())[strings.ToLower(bareColumn(col))]
 	if !ok {
 		return nil
 	}
