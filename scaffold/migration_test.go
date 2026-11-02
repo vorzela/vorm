@@ -156,4 +156,3 @@ func TestMakeMigrationAlterTableNoColumn(t *testing.T) {
 		t.Fatal(string(body))
 	}
 }
-

@@ -24,12 +24,16 @@ shown is what vorm prints. For the full method catalog see [`API.md`](API.md).
 
 ## Install
 
+vorm installs per-user — no root:
+
 ```bash
-go install github.com/vorzela/vorm/cmd/vorm@latest
+GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorm/cmd/vorm@v0.3.1
 vorm version
 ```
 
-The CLI runs migrations in-process.
+Or run `install.sh` / `install.ps1` from the repository. Canonical locations are
+`~/.local/bin/vorm` and `%LOCALAPPDATA%\Programs\vorm\bin\vorm.exe`; override
+with `VORM_INSTALL_DIR`. The CLI runs migrations in-process.
 
 ## Start a project
 

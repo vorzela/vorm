@@ -4,9 +4,31 @@ A codegen-first data layer for PostgreSQL, MySQL and MariaDB: migrations, models
 generated from the live database, and sqlc-style typed queries — one binary, no
 external migration tool required.
 
-```bash
-go install github.com/vorzela/vorm/cmd/vorm@latest
+## Install (per-user, no root)
 
+```bash
+# One canonical per-user location — no sudo.
+GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorm/cmd/vorm@v0.3.1
+vorm version
+```
+
+Or use the installer (also per-user):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/vorzela/vorm/main/install.sh | bash
+```
+
+Windows PowerShell:
+
+```powershell
+iex (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/vorzela/vorm/main/install.ps1')
+```
+
+Canonical paths: `~/.local/bin/vorm` (Linux/macOS) and
+`%LOCALAPPDATA%\Programs\vorm\bin\vorm.exe` (Windows). Override with
+`VORM_INSTALL_DIR`. Do not use `sudo` or `/usr/local/bin`.
+
+```bash
 export DATABASE_URL=postgres://user:pass@localhost:5432/app?sslmode=disable
 vorm init                 # write vorm.yaml (dialect detected from DATABASE_URL)
 vorm make migration posts # timestamped Blueprint Up/Down in migrations/

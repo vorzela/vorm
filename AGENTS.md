@@ -3,6 +3,16 @@
 Short contract for AI agents and codegen automation. Full reference:
 [`LLM.md`](LLM.md), [`docs/API.md`](docs/API.md), [`docs/USAGE.md`](docs/USAGE.md).
 
+## Install location (no root)
+
+```bash
+GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorm/cmd/vorm@v0.3.1
+```
+
+Canonical paths: `~/.local/bin/vorm` (Linux/macOS),
+`%LOCALAPPDATA%\Programs\vorm\bin\vorm.exe` (Windows). `install.sh` /
+`install.ps1` use the same location. Never `sudo` or `/usr/local/bin`.
+
 ## Golden rules
 
 1. **Never hand-edit `models/` or `vorm/gen/`.** Regenerate with `vorm generate`.

@@ -174,7 +174,7 @@ func quoteSQLString(s string) string {
 }
 
 // isSQLStringLiteral reports whether s is already a single-quoted SQL literal
-// (including escaped '' inside), e.g. 'KES' or 'it''s'.
+// (including escaped ” inside), e.g. 'KES' or 'it”s'.
 func isSQLStringLiteral(s string) bool {
 	if len(s) < 2 || s[0] != '\'' || s[len(s)-1] != '\'' {
 		return false

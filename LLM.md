@@ -2,6 +2,16 @@
 
 > Short contract: [`AGENTS.md`](AGENTS.md). Use this file for the full workflow.
 
+## Install location (no root)
+
+```bash
+GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorm/cmd/vorm@v0.3.1
+```
+
+Use `~/.local/bin/vorm` (Linux/macOS) or
+`%LOCALAPPDATA%\Programs\vorm\bin\vorm.exe` (Windows). `VORM_INSTALL_DIR`
+overrides it; never install with `sudo` into `/usr/local/bin`.
+
 ## Hard rules
 
 1. **Never hand-edit `models/` or `vorm/gen/`.** Regenerate: `vorm generate`.
